@@ -1,13 +1,13 @@
--- Tạo database app_db + bảng items + dữ liệu mẫu.
+-- Tạo database gameconnect_db + bảng items + dữ liệu mẫu.
 -- Cách chạy bằng MySQL Workbench:
 --   File > Open SQL Script... > chọn file này > bấm nút tia sét (Execute) > Refresh ô SCHEMAS.
 -- Chạy lại nhiều lần không lỗi (đã có thì bỏ qua), chỉ là dữ liệu mẫu sẽ bị thêm lặp.
 
 SET NAMES utf8mb4; -- để tiếng Việt không bị lỗi font
 
-CREATE DATABASE IF NOT EXISTS app_db
+CREATE DATABASE IF NOT EXISTS gameconnect_db
   CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE app_db;
+USE gameconnect_db;
 
 CREATE TABLE IF NOT EXISTS items (
   id          INT AUTO_INCREMENT PRIMARY KEY,
