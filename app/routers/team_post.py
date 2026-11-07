@@ -1,15 +1,15 @@
 """Router cho TeamPost và TeamPostApplication.
 
-    GET    /api/team-posts                              Danh sách bài đăng (lọc: game, region, status)
-    GET    /api/team-posts/{post_id}                   Chi tiết bài đăng + danh sách đơn ứng tuyển
-    POST   /api/team-posts                              Tạo bài đăng mới
+    GET    /api/team-posts                              Danh sách bài đăng
+    GET    /api/team-posts/{post_id}                   Chi tiết + danh sách đơn ứng tuyển
+    POST   /api/team-posts                              Tạo bài đăng
     PUT    /api/team-posts/{post_id}                   Cập nhật bài đăng
     DELETE /api/team-posts/{post_id}                   Xoá bài đăng
 
     GET    /api/team-posts/{post_id}/applications      Danh sách đơn ứng tuyển
     POST   /api/team-posts/{post_id}/applications      Nộp đơn ứng tuyển
     PUT    /api/team-posts/{post_id}/applications/{id} Cập nhật trạng thái đơn
-    DELETE /api/team-posts/{post_id}/applications/{id} Rút đơn ứng tuyển
+    DELETE /api/team-posts/{post_id}/applications/{id} Xoá / rút đơn
 """
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
@@ -43,7 +43,7 @@ def get_post_or_404(post_id: int, db: Session = Depends(get_db)):
 
 def get_application_or_404(post_id: int, application_id: int, db: Session = Depends(get_db)):
     app = team_post_crud.get_application(db, application_id)
-    if app is None or app.post_id != post_id:
+    if app is None or app.team_post_id != post_id:
         raise HTTPException(status_code=404, detail=f"Không tìm thấy đơn ứng tuyển id={application_id}")
     return app
 
@@ -54,14 +54,16 @@ def get_application_or_404(post_id: int, application_id: int, db: Session = Depe
 
 @router.get("", response_model=list[TeamPostOut])
 def list_team_posts(
-    game: str | None = Query(default=None, description="Lọc theo tên game"),
+    game_id: int | None = Query(default=None, description="Lọc theo game ID"),
     region: str | None = Query(default=None, description="Lọc theo khu vực"),
     status: PostStatus | None = Query(default=PostStatus.OPEN, description="Lọc theo trạng thái"),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
 ):
-    return team_post_crud.get_team_posts(db, game=game, region=region, status=status, skip=skip, limit=limit)
+    return team_post_crud.get_team_posts(
+        db, game_id=game_id, region=region, status=status, skip=skip, limit=limit
+    )
 
 
 @router.get("/{post_id}", response_model=TeamPostDetailOut)
@@ -75,7 +77,11 @@ def create_team_post(data: TeamPostCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/{post_id}", response_model=TeamPostOut)
-def update_team_post(data: TeamPostUpdate, post=Depends(get_post_or_404), db: Session = Depends(get_db)):
+def update_team_post(
+    data: TeamPostUpdate,
+    post=Depends(get_post_or_404),
+    db: Session = Depends(get_db),
+):
     return team_post_crud.update_team_post(db, post, data)
 
 
