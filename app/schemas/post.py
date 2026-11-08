@@ -12,8 +12,8 @@ class PostStatus(str, Enum):
 class PostBase(BaseModel):
     content: str = Field(min_length=1)
     image_url: str | None = Field(default=None, max_length=500)
-    game_id: int | None = None
     status: PostStatus = PostStatus.VISIBLE
+    game_ids: list[int] = Field(default_factory=list)
 
 
 class PostCreate(PostBase):
@@ -23,8 +23,8 @@ class PostCreate(PostBase):
 class PostUpdate(BaseModel):
     content: str | None = Field(default=None, min_length=1)
     image_url: str | None = Field(default=None, max_length=500)
-    game_id: int | None = None
     status: PostStatus | None = None
+    game_ids: list[int] | None = None
 
 
 class PostOut(PostBase):
@@ -38,7 +38,7 @@ class PostOut(PostBase):
 
 class CommentBase(BaseModel):
     content: str = Field(min_length=1)
-    parent_id: int | None = None
+    parent_comment_id: int | None = None
 
 
 class CommentCreate(CommentBase):

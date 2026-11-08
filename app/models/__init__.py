@@ -2,4 +2,4 @@
 # Thêm model mới -> nhớ thêm 1 dòng import vào file này.
 from app.models.item import Item  # noqa: F401
 from app.models.community import Game, User  # noqa: F401
-from app.models.post import Comment, Post, PostLike  # noqa: F401
+from app.models.post import Comment, Post, PostGame, PostLike  # noqa: F401
