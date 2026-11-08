@@ -2,7 +2,7 @@
 from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, String, text
 from sqlalchemy.orm import mapped_column
 
-from app.core.database import Base
+from app.db.session import Base
 
 
 class Notification(Base):
