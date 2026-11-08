@@ -11,7 +11,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import mapped_column
 
-from app.core.database import Base
+from app.db.session import Base
 
 
 class Report(Base):
