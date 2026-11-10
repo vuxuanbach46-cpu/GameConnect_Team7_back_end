@@ -3,7 +3,9 @@
 Muốn thêm cấu hình mới: thêm 1 dòng vào class Settings + thêm vào .env.example.
 """
 from urllib.parse import quote_plus
+import secrets
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,8 +17,13 @@ class Settings(BaseSettings):
     DB_HOST: str = "localhost"
     DB_PORT: int = 3306
     DB_USER: str = "root"
-    DB_PASSWORD: str = "123456@"
+    DB_PASSWORD: str = "123456"
     DB_NAME: str = "app_db"
+
+    SECRET_KEY: str = Field(default_factory=lambda: secrets.token_urlsafe(32))
+    JWT_ALGORITHM: str = "HS256"
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
     # Chuỗi các origin cách nhau bằng dấu phẩy, hoặc "*"
     CORS_ORIGINS: str = "*"
