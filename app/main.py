@@ -14,6 +14,8 @@ from app import models  # noqa: F401 - import để SQLAlchemy biết các bản
 from app.core.config import settings
 from app.core.limiter import limiter
 from app.db.session import Base, engine
+from app.routers import users
+from app.routers import gamer_profile
 from app.routers import auth, team_post, users
 
 
@@ -46,6 +48,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(users.router)
+app.include_router(gamer_profile.router)
 app.include_router(team_post.router, prefix="/api")
 
 

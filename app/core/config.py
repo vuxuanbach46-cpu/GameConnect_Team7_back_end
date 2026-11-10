@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     DB_HOST: str = "localhost"
     DB_PORT: int = 3306
     DB_USER: str = "root"
-    DB_PASSWORD: str = "123456@"
+    DB_PASSWORD: str = "123456"
     DB_NAME: str = "app_db"
 
     SECRET_KEY: str = Field(default_factory=lambda: secrets.token_urlsafe(32))

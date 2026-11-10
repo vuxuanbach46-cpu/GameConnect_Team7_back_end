@@ -6,7 +6,8 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     UniqueConstraint,
-    Index
+    Index,
+    BigInteger
 )
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -20,7 +21,7 @@ class UserGame(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
 
     user_id = Column(
-        Integer,
+        BigInteger,
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False
     )
