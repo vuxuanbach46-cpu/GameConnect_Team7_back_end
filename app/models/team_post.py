@@ -72,7 +72,7 @@ class TeamPost(Base):
     )
 
     needed_players: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=1, comment="Số người cần tuyển thêm"
+        Integer, nullable=False, default=1, comment="Số người cần tuyển thêm (1-9)"
     )
     play_time: Mapped[str | None] = mapped_column(
         String(100), nullable=True, comment="Khung giờ chơi (vd: 20:00-23:00)"
@@ -88,7 +88,7 @@ class TeamPost(Base):
         default=PostStatus.OPEN,
     )
     expires_at: Mapped[datetime | None] = mapped_column(
-        DateTime, nullable=True, comment="Hạn hiển thị bài đăng"
+        DateTime, nullable=True, comment="Hạn hiển thị bài đăng (tối đa 7 ngày)"
     )
 
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
@@ -106,10 +106,15 @@ class TeamPost(Base):
         "TeamPostRole",
         primaryjoin="TeamPost.id == foreign(TeamPostRole.team_post_id)",
         cascade="all, delete-orphan",
+        lazy="joined",
     )
     applications: Mapped[list["TeamPostApplication"]] = relationship(
         "TeamPostApplication", back_populates="post", cascade="all, delete-orphan"
     )
+
+    @property
+    def role_ids(self) -> list[int]:
+        return [r.game_role_id for r in self.post_roles] if self.post_roles else []
 
 
 # ---------------------------------------------------------------------------
