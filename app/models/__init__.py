@@ -5,3 +5,6 @@ from app.models.game import Game
 from app.models.game_rank import GameRank
 from app.models.game_role import GameRole
 from app.models.user_game import UserGame
+from app.models.friend_request import FriendRequest
+from app.models.friendships import Friendship
+from app.models.block import Block

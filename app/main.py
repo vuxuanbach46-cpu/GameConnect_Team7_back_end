@@ -16,7 +16,7 @@ from app.core.config import settings
 from app.core.limiter import limiter
 from app.db.session import Base, engine
 from app.routers import users
-
+from app.routers import friend_request
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -47,7 +47,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(users.router)
-
+app.include_router(friend_request.router)
 @app.get("/")
 def root():
     return {"message": f"{settings.APP_NAME} đang chạy. Xem tài liệu API tại /docs"}
