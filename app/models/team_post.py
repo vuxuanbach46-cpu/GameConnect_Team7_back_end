@@ -1,8 +1,6 @@
 """Model: team_posts, team_post_roles, team_post_applications.
 
-Các bảng liên quan (users, games, game_ranks, game_roles) thuộc task khác.
-FK đến các bảng đó được khai báo đúng kiểu dữ liệu và tên cột ở đây;
-constraint SQL thực sự nằm trong sql/team_posts.sql để chạy trên MySQL Workbench.
+Khớp chuẩn schema GameConnect cho task tìm đội / tuyển thành viên.
 """
 import enum
 from datetime import datetime
@@ -47,31 +45,30 @@ class ApplicationStatus(str, enum.Enum):
 # ---------------------------------------------------------------------------
 
 class TeamPost(Base):
-    """Bài đăng tìm đội / tìm thành viên theo đúng schema GameConnect."""
+    """Bài đăng tìm đội / tìm thành viên."""
 
     __tablename__ = "team_posts"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
 
-    # FK → users.id  (model users do task khác implement)
+    # FK → users.id (BigInteger)
     user_id: Mapped[int] = mapped_column(
         BigInteger, nullable=False, index=True, comment="ID người đăng bài (FK → users.id)"
     )
 
-    # FK → games.id  (model games do task khác implement)
+    # FK → games.id (Integer)
     game_id: Mapped[int] = mapped_column(
-        BigInteger, nullable=False, comment="FK → games.id"
+        Integer, nullable=False, comment="FK → games.id"
     )
 
     title: Mapped[str] = mapped_column(String(150), nullable=False, comment="Tiêu đề bài đăng")
 
-    # FK → game_ranks.id  (composite: game_id, min_rank_id → game_ranks.game_id, id)
+    # FK → game_ranks.id (Integer)
     min_rank_id: Mapped[int | None] = mapped_column(
-        BigInteger, nullable=True, comment="Rank tối thiểu chấp nhận (FK → game_ranks.id)"
+        Integer, nullable=True, comment="Rank tối thiểu chấp nhận (FK → game_ranks.id)"
     )
-    # FK → game_ranks.id  (composite: game_id, max_rank_id → game_ranks.game_id, id)
     max_rank_id: Mapped[int | None] = mapped_column(
-        BigInteger, nullable=True, comment="Rank tối đa chấp nhận (FK → game_ranks.id)"
+        Integer, nullable=True, comment="Rank tối đa chấp nhận (FK → game_ranks.id)"
     )
 
     needed_players: Mapped[int] = mapped_column(
@@ -83,7 +80,7 @@ class TeamPost(Base):
     region: Mapped[str | None] = mapped_column(
         String(100), nullable=True, comment="Khu vực / server (vd: VN, SEA)"
     )
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True, comment="Mô tả chi tiết")
 
     status: Mapped[PostStatus] = mapped_column(
         Enum(PostStatus, name="post_status"),
@@ -100,18 +97,15 @@ class TeamPost(Base):
     )
 
     __table_args__ = (
-        # Schema requires unique (game_id, id) for composite FK from team_post_roles
-        UniqueConstraint("game_id", "id", name="uq_team_posts_game_id"),
         Index("ix_team_posts_game_status", "game_id", "status"),
         Index("ix_team_posts_user_id", "user_id"),
     )
 
-    # Relationships (nội bộ task này)
+    # Relationships nội bộ module
     post_roles: Mapped[list["TeamPostRole"]] = relationship(
         "TeamPostRole",
         primaryjoin="TeamPost.id == foreign(TeamPostRole.team_post_id)",
         cascade="all, delete-orphan",
-        overlaps="",
     )
     applications: Mapped[list["TeamPostApplication"]] = relationship(
         "TeamPostApplication", back_populates="post", cascade="all, delete-orphan"
@@ -119,25 +113,22 @@ class TeamPost(Base):
 
 
 # ---------------------------------------------------------------------------
-# TeamPostRole  –  bảng team_post_roles  (junction: vai trò cần tuyển)
+# TeamPostRole  –  bảng team_post_roles  (vai trò cần tuyển)
 # ---------------------------------------------------------------------------
 
 class TeamPostRole(Base):
-    """Vai trò cần tuyển cho một bài đăng (1 bài có thể cần nhiều vai trò).
-
-    Composite FK:
-        (game_id, team_post_id) → team_posts(game_id, id)
-        (game_id, game_role_id) → game_roles(game_id, id)
-    """
+    """Vai trò cần tuyển cho một bài đăng (1 bài có thể cần nhiều vai trò)."""
 
     __tablename__ = "team_post_roles"
 
-    team_post_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    team_post_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("team_posts.id", ondelete="CASCADE"), nullable=False
+    )
     game_id: Mapped[int] = mapped_column(
-        BigInteger, nullable=False, comment="Phải trùng game_id của team_post và game_role"
+        Integer, nullable=False, comment="FK → games.id"
     )
     game_role_id: Mapped[int] = mapped_column(
-        BigInteger, nullable=False, comment="FK → game_roles.id"
+        Integer, nullable=False, comment="FK → game_roles.id"
     )
 
     __table_args__ = (
@@ -162,7 +153,6 @@ class TeamPostApplication(Base):
         nullable=False,
         index=True,
     )
-    # FK → users.id  (model users do task khác implement)
     user_id: Mapped[int] = mapped_column(
         BigInteger, nullable=False, index=True, comment="ID người ứng tuyển (FK → users.id)"
     )
