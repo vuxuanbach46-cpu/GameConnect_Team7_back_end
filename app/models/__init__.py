@@ -10,3 +10,4 @@ from app.models.post import Post  # noqa: F401
 from app.models.post_game import PostGame  # noqa: F401
 from app.models.comment import Comment  # noqa: F401
 from app.models.post_like import PostLike  # noqa: F401
+from app.models.notification import Notification  # noqa: F401
