@@ -1,5 +1,5 @@
 
-from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey
+from sqlalchemy import Column, BigInteger, String, Text, Boolean, DateTime, ForeignKey, Integer
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 
@@ -12,7 +12,7 @@ class GamerProfile(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
 
     user_id = Column(
-        Integer,
+        BigInteger,
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
         unique=True
@@ -27,6 +27,14 @@ class GamerProfile(Base):
     has_mic = Column(Boolean, nullable=False, default=False)
 
     created_at = Column(DateTime, nullable=False, server_default=func.now())
+
+    is_public = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="0"
+    )
+
     updated_at = Column(
         DateTime,
         nullable=False,
