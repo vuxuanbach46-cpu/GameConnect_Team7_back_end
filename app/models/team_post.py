@@ -53,7 +53,7 @@ class TeamPost(Base):
 
     # FK → users.id (BigInteger)
     user_id: Mapped[int] = mapped_column(
-        BigInteger, nullable=False, index=True, comment="ID người đăng bài (FK → users.id)"
+        BigInteger, nullable=False, comment="ID người đăng bài (FK → users.id)"
     )
 
     # FK → games.id (Integer)
@@ -156,10 +156,9 @@ class TeamPostApplication(Base):
         BigInteger,
         ForeignKey("team_posts.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
     user_id: Mapped[int] = mapped_column(
-        BigInteger, nullable=False, index=True, comment="ID người ứng tuyển (FK → users.id)"
+        BigInteger, nullable=False, comment="ID người ứng tuyển (FK → users.id)"
     )
 
     message: Mapped[str | None] = mapped_column(Text, nullable=True, comment="Lời nhắn khi ứng tuyển")
@@ -178,6 +177,7 @@ class TeamPostApplication(Base):
     __table_args__ = (
         UniqueConstraint("team_post_id", "user_id", name="uq_team_post_apps_post_user"),
         Index("ix_team_post_apps_user_status", "user_id", "status"),
+        Index("ix_team_post_apps_post_id", "team_post_id"),
     )
 
     post: Mapped["TeamPost"] = relationship("TeamPost", back_populates="applications")
