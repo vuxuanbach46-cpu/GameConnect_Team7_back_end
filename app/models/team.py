@@ -19,7 +19,7 @@ class Team(Base):
     name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     logo: Mapped[str | None] = mapped_column(String(500), nullable=True)
     main_game_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("games.id", ondelete="RESTRICT"), nullable=False
+        Integer, ForeignKey("games.id", ondelete="RESTRICT"), nullable=False
     )
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     captain_id: Mapped[int] = mapped_column(

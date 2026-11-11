@@ -16,8 +16,7 @@ from app.core.limiter import limiter
 from app.db.session import Base, engine
 from app.routers import users
 from app.routers import gamer_profile
-from app.routers import auth, team_post, users
-
+from app.routers import auth, team_post, users, team
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -49,8 +48,8 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(gamer_profile.router)
+app.include_router(team.router, prefix="/api")
 app.include_router(team_post.router, prefix="/api")
-
 
 @app.get("/")
 def root():
