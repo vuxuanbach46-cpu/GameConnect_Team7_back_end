@@ -35,6 +35,7 @@ class TeamPostCreate(TeamPostBase):
 
 class TeamPostUpdate(BaseModel):
     """Dữ liệu gửi lên khi CẬP NHẬT bài đăng."""
+    user_id: int | None = Field(default=None, description="ID người gửi yêu cầu (nếu không dùng token)")
     title: str | None = Field(default=None, min_length=1, max_length=150)
     min_rank_id: int | None = None
     max_rank_id: int | None = None
@@ -57,6 +58,15 @@ class TeamPostOut(TeamPostBase):
     created_at: datetime
     updated_at: datetime
     role_ids: list[int] = []
+
+
+class TeamPostPaginationOut(BaseModel):
+    """Kết quả phân trang danh sách bài đăng."""
+    items: list[TeamPostOut]
+    total: int = Field(ge=0, description="Tổng số bài tìm thấy")
+    page: int = Field(ge=1, description="Trang hiện tại")
+    page_size: int = Field(ge=1, description="Số bài mỗi trang")
+    total_pages: int = Field(ge=0, description="Tổng số trang")
 
 
 # ---------------------------------------------------------------------------

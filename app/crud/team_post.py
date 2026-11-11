@@ -11,7 +11,7 @@ Bao gồm đầy đủ các quy tắc nghiệp vụ (Business Rules) và validat
 from datetime import datetime, timedelta
 
 from fastapi import HTTPException, status
-from sqlalchemy import delete, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.game import Game
@@ -39,20 +39,109 @@ from app.schemas.team_post import (
 def get_team_posts(
     db: Session,
     game_id: int | None = None,
+    rank_id: int | None = None,
+    min_rank_id: int | None = None,
+    max_rank_id: int | None = None,
+    role_id: int | None = None,
+    play_time: str | None = None,
     region: str | None = None,
+    q: str | None = None,
     status_filter: PostStatus | None = PostStatus.OPEN,
-    skip: int = 0,
-    limit: int = 50,
-) -> list[TeamPost]:
-    """Danh sách bài đăng. Mặc định chỉ lấy OPEN."""
-    query = select(TeamPost).order_by(TeamPost.created_at.desc())
+    include_expired: bool = False,
+    page: int = 1,
+    page_size: int = 20,
+) -> tuple[list[TeamPost], int]:
+    """Danh sách và tìm kiếm bài đăng.
+
+    Quy tắc:
+    - Tìm theo game_id
+    - Tìm theo rank_id (phù hợp khoảng min_rank - max_rank của bài)
+    - Tìm theo vai trò (role_id)
+    - Tìm theo giờ chơi (play_time substring)
+    - Tìm theo khu vực (region substring)
+    - Tìm theo từ khóa (q: tiêu đề hoặc mô tả)
+    - Mặc định chỉ lấy bài OPEN và còn hạn (expires_at is NULL hoặc expires_at > now())
+    - Sắp xếp mới nhất (created_at DESC)
+    - Phân trang (page, page_size)
+    """
+    query = select(TeamPost)
+
+    # 1. Lọc theo game
     if game_id:
         query = query.where(TeamPost.game_id == game_id)
+
+    # 2. Lọc theo rank người chơi (nằm trong khoảng min_rank -> max_rank của bài)
+    if rank_id:
+        target_rank = db.get(GameRank, rank_id)
+        if target_rank:
+            min_rank_subq = (
+                select(GameRank.rank_order)
+                .where(GameRank.id == TeamPost.min_rank_id)
+                .scalar_subquery()
+            )
+            max_rank_subq = (
+                select(GameRank.rank_order)
+                .where(GameRank.id == TeamPost.max_rank_id)
+                .scalar_subquery()
+            )
+            query = query.where(
+                or_(TeamPost.min_rank_id.is_(None), min_rank_subq <= target_rank.rank_order),
+                or_(TeamPost.max_rank_id.is_(None), max_rank_subq >= target_rank.rank_order),
+            )
+        else:
+            query = query.where(
+                or_(TeamPost.min_rank_id == rank_id, TeamPost.max_rank_id == rank_id)
+            )
+
+    if min_rank_id:
+        query = query.where(TeamPost.min_rank_id == min_rank_id)
+    if max_rank_id:
+        query = query.where(TeamPost.max_rank_id == max_rank_id)
+
+    # 3. Lọc theo vai trò (role_id)
+    if role_id:
+        query = query.where(
+            TeamPost.id.in_(
+                select(TeamPostRole.team_post_id).where(TeamPostRole.game_role_id == role_id)
+            )
+        )
+
+    # 4. Lọc theo giờ chơi
+    if play_time:
+        query = query.where(TeamPost.play_time.ilike(f"%{play_time.strip()}%"))
+
+    # 5. Lọc theo khu vực
     if region:
-        query = query.where(TeamPost.region.contains(region))
+        query = query.where(TeamPost.region.ilike(f"%{region.strip()}%"))
+
+    # 6. Tìm kiếm từ khóa (q: tiêu đề hoặc mô tả)
+    if q:
+        kw = f"%{q.strip()}%"
+        query = query.where(or_(TeamPost.title.ilike(kw), TeamPost.description.ilike(kw)))
+
+    # 7. Trạng thái (mặc định chỉ OPEN)
     if status_filter:
         query = query.where(TeamPost.status == status_filter)
-    return list(db.scalars(query.offset(skip).limit(limit)))
+
+    # 8. Hạn hiển thị: chỉ bài còn hạn (mặc định)
+    if not include_expired:
+        now = datetime.now()
+        query = query.where(
+            or_(TeamPost.expires_at.is_(None), TeamPost.expires_at > now)
+        )
+
+    # Đếm tổng số bài khớp điều kiện
+    count_query = select(func.count()).select_from(query.order_by(None).subquery())
+    total = db.scalar(count_query) or 0
+
+    # 9. Sắp xếp mới nhất
+    query = query.order_by(TeamPost.created_at.desc())
+
+    # 10. Phân trang
+    offset = max(0, (page - 1) * page_size)
+    items = list(db.scalars(query.offset(offset).limit(page_size)).unique())
+
+    return items, total
 
 
 def get_team_post(db: Session, post_id: int) -> TeamPost | None:
@@ -197,7 +286,7 @@ def create_team_post(
 
 
 def update_team_post(db: Session, post: TeamPost, data: TeamPostUpdate) -> TeamPost:
-    """Cập nhật bài đăng tìm đội."""
+    """Cập nhật bài đăng tìm đội kèm đầy đủ validation."""
     if data.needed_players is not None and (data.needed_players < 1 or data.needed_players > 9):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -223,7 +312,49 @@ def update_team_post(db: Session, post: TeamPost, data: TeamPostUpdate) -> TeamP
                 detail="Hạn hiển thị bài đăng tối đa không được vượt quá 7 ngày kể từ hiện tại",
             )
 
-    update_data = data.model_dump(exclude_unset=True, exclude={"role_ids"})
+    # Validate rank nếu có cập nhật
+    eff_min_id = data.min_rank_id if data.min_rank_id is not None else post.min_rank_id
+    eff_max_id = data.max_rank_id if data.max_rank_id is not None else post.max_rank_id
+
+    min_rank_obj = None
+    max_rank_obj = None
+
+    if data.min_rank_id is not None:
+        min_rank_obj = db.get(GameRank, data.min_rank_id)
+        if not min_rank_obj:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Rank tối thiểu (id={data.min_rank_id}) không tồn tại",
+            )
+        if min_rank_obj.game_id != post.game_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Rank tối thiểu không thuộc trò chơi của bài đăng này",
+            )
+
+    if data.max_rank_id is not None:
+        max_rank_obj = db.get(GameRank, data.max_rank_id)
+        if not max_rank_obj:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Rank tối đa (id={data.max_rank_id}) không tồn tại",
+            )
+        if max_rank_obj.game_id != post.game_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Rank tối đa không thuộc trò chơi của bài đăng này",
+            )
+
+    if eff_min_id and eff_max_id:
+        min_r = min_rank_obj or db.get(GameRank, eff_min_id)
+        max_r = max_rank_obj or db.get(GameRank, eff_max_id)
+        if min_r and max_r and min_r.rank_order > max_r.rank_order:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Rank tối thiểu ({min_r.rank_name}) không được cao hơn rank tối đa ({max_r.rank_name})",
+            )
+
+    update_data = data.model_dump(exclude_unset=True, exclude={"role_ids", "user_id"})
     for field, value in update_data.items():
         setattr(post, field, value)
 
@@ -251,7 +382,16 @@ def update_team_post(db: Session, post: TeamPost, data: TeamPostUpdate) -> TeamP
     return post
 
 
+def close_team_post(db: Session, post: TeamPost) -> TeamPost:
+    """Đóng bài đăng tìm đội sớm (status -> CLOSED)."""
+    post.status = PostStatus.CLOSED
+    db.commit()
+    db.refresh(post)
+    return post
+
+
 def delete_team_post(db: Session, post: TeamPost) -> None:
+    """Xóa bài đăng tìm đội (cascade roles và applications)."""
     db.delete(post)
     db.commit()
 
