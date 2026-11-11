@@ -5,8 +5,9 @@ Tài liệu API tự sinh: http://127.0.0.1:8000/docs
 """
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -14,9 +15,7 @@ from app import models  # noqa: F401 - import để SQLAlchemy biết các bản
 from app.core.config import settings
 from app.core.limiter import limiter
 from app.db.session import Base, engine
-from app.routers import users
-from app.routers import gamer_profile
-from app.routers import auth, team_post, users
+from app.routers import auth, gamer_profile, team_post, users
 
 
 @asynccontextmanager
@@ -50,6 +49,16 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(gamer_profile.router)
 app.include_router(team_post.router, prefix="/api")
+
+
+@app.get("/api/health", summary="Health check endpoint cho frontend")
+def health_check():
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return {"status": "ok", "database": "connected"}
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
 
 @app.get("/")
