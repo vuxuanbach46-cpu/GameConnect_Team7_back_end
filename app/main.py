@@ -10,13 +10,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import OperationalError
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from app.routers import auth
 from app import models  # noqa: F401 - import để SQLAlchemy biết các bảng
 from app.core.config import settings
 from app.core.limiter import limiter
 from app.db.session import Base, engine
 from app.routers import users
+from app.routers import auth
 from app.routers import gamer_profile
+
 
 
 @asynccontextmanager
