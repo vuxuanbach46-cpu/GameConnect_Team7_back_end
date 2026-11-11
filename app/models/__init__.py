@@ -5,6 +5,9 @@ from app.models.game import Game  # noqa: F401
 from app.models.game_rank import GameRank  # noqa: F401
 from app.models.game_role import GameRole  # noqa: F401
 from app.models.user_game import UserGame  # noqa: F401
+from app.models.friend_request import FriendRequest
+from app.models.friendships import Friendship
+from app.models.block import Block
 from app.models.team_post import TeamPost, TeamPostApplication, TeamPostRole  # noqa: F401
 from app.models.post import Post  # noqa: F401
 from app.models.post_game import PostGame  # noqa: F401
