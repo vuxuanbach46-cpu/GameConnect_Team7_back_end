@@ -53,7 +53,7 @@ class TeamPost(Base):
 
     # FK → users.id (BigInteger)
     user_id: Mapped[int] = mapped_column(
-        BigInteger, nullable=False, index=True, comment="ID người đăng bài (FK → users.id)"
+        BigInteger, nullable=False, comment="ID người đăng bài (FK → users.id)"
     )
 
     # FK → games.id (Integer)

@@ -8,6 +8,10 @@ from app.models.user_game import UserGame  # noqa: F401
 from app.models.friend_request import FriendRequest
 from app.models.friendships import Friendship
 from app.models.block import Block
+from app.models.report import Report  # noqa: F401
+from app.models.team import Team  # noqa: F401
+from app.models.team_member import TeamMember  # noqa: F401
+from app.models.team_join_request import TeamJoinRequest  # noqa: F401
 from app.models.team_post import TeamPost, TeamPostApplication, TeamPostRole  # noqa: F401
 from app.models.post import Post  # noqa: F401
 from app.models.post_game import PostGame  # noqa: F401

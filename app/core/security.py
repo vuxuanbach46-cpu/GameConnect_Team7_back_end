@@ -7,8 +7,13 @@ from app.db.session import get_db
 from sqlalchemy.orm import Session
 from jose import JWTError, ExpiredSignatureError, jwt
 from app.models.user import User
+from fastapi import Request
 
-oauth2_schema = HTTPBearer()
+oauth2_schema = HTTPBearer(scheme_name="BearerAuth")
+optional_bearer_schema = HTTPBearer(
+    auto_error=False,
+    scheme_name="BearerAuth",
+)
 
 
 # Bắm mật khẩu
@@ -40,52 +45,92 @@ def create_refresh_token(data: dict) -> str:
     payload.update({"exp": expiration, "type": "refresh"})
     return jwt.encode(payload, settings.SECRET_KEY, settings.JWT_ALGORITHM)
 
+# Giải mã access token và lấy user_id
+def decode_access_token(token: str) -> int:
+    payload = jwt.decode(
+        token,
+        settings.SECRET_KEY,
+        algorithms=[settings.JWT_ALGORITHM]
+    )
 
-# Giải mã token 
+    if payload.get("type") != "access":
+        raise JWTError("Token không phải access token")
+
+    user_id = int(payload["sub"])
+
+    return user_id
+
+
+# Lấy user hiện tại từ request state
 def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(oauth2_schema),
-    db: Session = Depends(get_db),
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(optional_bearer_schema),
+    db: Session = Depends(get_db)
 ):
-    token = credentials.credentials
-    try:
-        payload = jwt.decode(
-            token, settings.SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
-        )
-        if payload.get("type") != "access":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token không phải access token",
-            )
-        user_id = int(payload["sub"])
-    except ExpiredSignatureError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="token hết hạn"
-        )
-    except (KeyError, TypeError, ValueError):
+    user_id = getattr(request.state, "user_id", None)
+
+    if user_id is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token không hợp lệ: thiếu user ID",
+            detail="Bạn cần đăng nhập"
         )
-    except JWTError:
+
+    user = db.query(User).filter(User.id == user_id).first()
+
+    if user is None:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Token không hợp lệ"
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Người dùng không tồn tại"
         )
 
-    find_user = db.query(User).filter(User.id == user_id).first()
-
-    if not find_user:
+    if user.status != "ACTIVE":
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Người dùng không tồn tại"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tài khoản đã bị vô hiệu hóa"
         )
 
-    if find_user.status != "ACTIVE":
+    return user
+
+# Lấy user hiện tại từ request state, nhưng không bắt buộc phải có user
+def get_optional_user(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(optional_bearer_schema),
+    db: Session = Depends(get_db)
+):
+    user_id = getattr(request.state, "user_id", None)
+
+    if user_id is None:
+        return None
+
+    user = db.query(User).filter(User.id == user_id).first()
+
+    if user is None:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Tài khoản đã bị vô hiệu hóa"
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Người dùng không tồn tại"
         )
 
-    return find_user
+    if user.status != "ACTIVE":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tài khoản đã bị vô hiệu hóa"
+        )
 
+    return user
 
+# Phân quyền admin
+def get_admin_user(
+    current_user: User = Depends(get_current_user)
+):
+    if current_user.role != "ADMIN":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Bạn không có quyền truy cập chức năng này"
+        )
+
+    return current_user
+
+# Cấp lại access token từ refresh token
 def refresh_access_token(
     credentials: HTTPAuthorizationCredentials,
     db: Session,
