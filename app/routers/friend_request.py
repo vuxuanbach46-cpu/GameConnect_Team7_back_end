@@ -266,7 +266,6 @@ def list_friends(
 
 
 @router.delete("/friends/{friend_id}", summary="Hủy kết bạn (Unfriend)")
-@router.post("/friends/{friend_id}/unfriend", summary="Hủy kết bạn (POST alternative)")
 def remove_friend(
     friend_id: int,
     req: Request,
