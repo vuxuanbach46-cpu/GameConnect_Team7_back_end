@@ -25,6 +25,11 @@ SOURCE ./team_post_roles.sql;
 SOURCE ./team_post_applications.sql;
 SOURCE ./seed_team_posts.sql;
 
+-- 5. Module quản lý đội nhóm (Team)
+SOURCE ./teams.sql;
+SOURCE ./team_members.sql;
+SOURCE ./team_join_requests.sql;
+
 SET FOREIGN_KEY_CHECKS = 1;
 
 SELECT 'Khởi tạo database và dữ liệu mẫu thành công!' AS message;

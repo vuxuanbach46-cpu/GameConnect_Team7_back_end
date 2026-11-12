@@ -33,11 +33,10 @@ class UserLoginResponse(BaseModel):
 
 # Gửi thông tin account hiện tại 
 class UserProfileResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     email: str
-    full_name: str
+    username: str
     role: str
-    is_active: bool
-
-    class Config:
-        from_attributes = True
+    status: str
