@@ -9,6 +9,7 @@ SOURCE ./users.sql;
 SOURCE ./games.sql;
 SOURCE ./game_ranks.sql;
 SOURCE ./game_roles.sql;
+SOURCE ./seed_games_data.sql;
 SOURCE ./gamer_profiles.sql;
 SOURCE ./user_games.sql;
 
@@ -24,6 +25,11 @@ SOURCE ./team_posts.sql;
 SOURCE ./team_post_roles.sql;
 SOURCE ./team_post_applications.sql;
 SOURCE ./seed_team_posts.sql;
+
+-- 5. Module Auto Matchmaking (Tự động ghép đội & Hiện Code Game)
+SOURCE ./match_rooms.sql;
+SOURCE ./match_room_members.sql;
+SOURCE ./match_queue.sql;
 
 SET FOREIGN_KEY_CHECKS = 1;
 

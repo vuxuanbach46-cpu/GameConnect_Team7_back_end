@@ -21,7 +21,8 @@ from app.models.post import Post
 from app.models.post_game import PostGame
 from app.models.post_like import PostLike
 from app.models.notification import Notification
-from app.routers import auth, gamer_profile, notifications, posts, team_post, users
+from app.models.matchmaking import MatchRoom, MatchRoomMember, MatchQueue
+from app.routers import auth, gamer_profile, matchmaking, notifications, posts, team_post, users
 
 
 @asynccontextmanager
@@ -35,6 +36,9 @@ async def lifespan(app: FastAPI):
                 Comment.__table__,
                 PostLike.__table__,
                 Notification.__table__,
+                MatchRoom.__table__,
+                MatchRoomMember.__table__,
+                MatchQueue.__table__,
             ],
         )
         print(f"[DB] Connected to MySQL {settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}")
@@ -62,6 +66,7 @@ app.include_router(friend_request.router)
 app.include_router(notifications.router)
 app.include_router(gamer_profile.router)
 app.include_router(team_post.router, prefix="/api")
+app.include_router(matchmaking.router, prefix="/api")
 app.include_router(posts.router)
 
 @app.get("/")

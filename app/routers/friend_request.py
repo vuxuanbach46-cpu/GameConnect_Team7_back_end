@@ -1,26 +1,27 @@
+"""API Router cho chức năng quản lý lời mời kết bạn."""
 
-from fastapi import APIRouter, Depends, Request, Response, status
+from typing import Optional
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.security import get_current_user
 from app.db.session import get_db
-
 from app.models.user import User
 
 from app.schemas.friend_request import (
     FriendRequestCreate,
     FriendRequestResponse
 )
-
 from app.schemas.api_response import api_repoint
-
 from app.crud.friend_request import (
     send_friend_request,
     cancel_friend_request,
     get_sent_friend_requests,
     get_received_friend_requests,
     accept_friend_request,
-    reject_friend_request
+    reject_friend_request,
+    unfriend,
+    get_friends_list,
 )
 
 
@@ -44,15 +45,15 @@ def format_request_list(results):
             "created_at": request.created_at,
             "user": {
                 "id": user.id,
-                "username": user.username,
-                "email": user.email
+                "username": user.username
             }
         })
 
     return data
 
 
-@router.post("/", summary="Gửi lời mời kết bạn")
+@router.post("", summary="Gửi lời mời kết bạn")
+@router.post("/", summary="Gửi lời mời kết bạn", include_in_schema=False)
 def create_friend_request(
     req: Request,
     response: Response,
@@ -66,27 +67,24 @@ def create_friend_request(
         receiver_id=data.receiver_id
     )
 
-    if isinstance(result, dict):
-        response_data = result
-        message = result["message"]
+    # Xác định đối tượng liên quan để hiển thị username
+    target_id = result.receiver_id if result.sender_id == current_user.id else result.sender_id
+    target_user = db.query(User).filter(User.id == target_id).first()
+    target_username = target_user.username if target_user else "Người dùng"
+
+    if result.status == "ACCEPTED":
         response_status = status.HTTP_200_OK
-
+        message = f"Hai người đã trở thành bạn bè với {target_username}"
     else:
-        target_user = db.query(User).filter(
-            User.id == result.receiver_id
-        ).first()
-
-        response_data = {
-            **FriendRequestResponse.model_validate(
-                result
-            ).model_dump(),
-            "target_username": target_user.username
-        }
-
-        message = f"Đã gửi lời mời đến {target_user.username}"
         response_status = status.HTTP_201_CREATED
+        message = f"Đã gửi lời mời đến {target_username}"
 
     response.status_code = response_status
+
+    response_data = {
+        **FriendRequestResponse.model_validate(result).model_dump(),
+        "target_username": target_username
+    }
 
     return api_repoint(
         req=req,
@@ -112,18 +110,19 @@ def delete_friend_request(
     target_user = db.query(User).filter(
         User.id == result.receiver_id
     ).first()
+    target_username = target_user.username if target_user else "Người dùng"
 
     response_data = {
         **FriendRequestResponse.model_validate(
             result
         ).model_dump(),
-        "target_username": target_user.username
+        "target_username": target_username
     }
 
     return api_repoint(
         req=req,
         status_code=status.HTTP_200_OK,
-        message=f"Đã hủy lời mời gửi đến {target_user.username}",
+        message=f"Đã hủy lời mời gửi đến {target_username}",
         data=response_data
     )
 
@@ -131,12 +130,22 @@ def delete_friend_request(
 @router.get("/sent", summary="Xem danh sách lời mời đã gửi")
 def list_sent_friend_requests(
     req: Request,
+    request_status: Optional[str] = Query(
+        default="PENDING",
+        alias="status",
+        description="Trạng thái lọc: PENDING, ACCEPTED, REJECTED, CANCELLED. Bỏ trống để lấy tất cả"
+    ),
+    skip: int = Query(default=0, ge=0, description="Số bản ghi bỏ qua"),
+    limit: int = Query(default=20, ge=1, le=100, description="Số bản ghi tối đa trả về"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     results = get_sent_friend_requests(
         db=db,
-        current_user=current_user
+        current_user=current_user,
+        status=request_status,
+        skip=skip,
+        limit=limit
     )
 
     return api_repoint(
@@ -150,12 +159,22 @@ def list_sent_friend_requests(
 @router.get("/received", summary="Xem danh sách lời mời đã nhận")
 def list_received_friend_requests(
     req: Request,
+    request_status: Optional[str] = Query(
+        default="PENDING",
+        alias="status",
+        description="Trạng thái lọc: PENDING, ACCEPTED, REJECTED, CANCELLED. Bỏ trống để lấy tất cả"
+    ),
+    skip: int = Query(default=0, ge=0, description="Số bản ghi bỏ qua"),
+    limit: int = Query(default=20, ge=1, le=100, description="Số bản ghi tối đa trả về"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     results = get_received_friend_requests(
         db=db,
-        current_user=current_user
+        current_user=current_user,
+        status=request_status,
+        skip=skip,
+        limit=limit
     )
 
     return api_repoint(
@@ -182,16 +201,17 @@ def accept_request(
     sender = db.query(User).filter(
         User.id == result.sender_id
     ).first()
+    sender_username = sender.username if sender else "Người dùng"
 
     return api_repoint(
         req=req,
         status_code=status.HTTP_200_OK,
-        message=f"Bạn đã trở thành bạn bè với {sender.username}",
+        message=f"Bạn đã trở thành bạn bè với {sender_username}",
         data={
             **FriendRequestResponse.model_validate(
                 result
             ).model_dump(),
-            "friend_username": sender.username
+            "friend_username": sender_username
         }
     )
 
@@ -212,15 +232,63 @@ def reject_request(
     sender = db.query(User).filter(
         User.id == result.sender_id
     ).first()
+    sender_username = sender.username if sender else "Người dùng"
 
     return api_repoint(
         req=req,
         status_code=status.HTTP_200_OK,
-        message=f"Đã từ chối lời mời từ {sender.username}",
+        message=f"Đã từ chối lời mời từ {sender_username}",
         data={
             **FriendRequestResponse.model_validate(
                 result
             ).model_dump(),
-            "sender_username": sender.username
+            "sender_username": sender_username
+        }
+    )
+
+
+@router.get("/friends", summary="Xem danh sách bạn bè hiện tại")
+def list_friends(
+    req: Request,
+    skip: int = Query(default=0, ge=0, description="Số bản ghi bỏ qua"),
+    limit: int = Query(default=50, ge=1, le=100, description="Số lượng tối đa"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Lấy danh sách tất cả những người đang là bạn bè với tài khoản hiện tại."""
+    friends = get_friends_list(db=db, current_user=current_user, skip=skip, limit=limit)
+    return api_repoint(
+        req=req,
+        status_code=status.HTTP_200_OK,
+        message="Danh sách bạn bè",
+        data=friends
+    )
+
+
+@router.delete("/friends/{friend_id}", summary="Hủy kết bạn (Unfriend)")
+@router.post("/friends/{friend_id}/unfriend", summary="Hủy kết bạn (POST alternative)")
+def remove_friend(
+    friend_id: int,
+    req: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Hủy kết bạn khi hai người đã là bạn bè.
+    - Xóa quan hệ bạn bè trong bảng `friendships`.
+    - Dọn dẹp trạng thái lời mời cũ để có thể kết bạn lại sau này.
+    """
+    friend = unfriend(
+        db=db,
+        current_user=current_user,
+        friend_id=friend_id
+    )
+
+    return api_repoint(
+        req=req,
+        status_code=status.HTTP_200_OK,
+        message=f"Đã hủy kết bạn thành công với {friend.username}",
+        data={
+            "unfriended_user_id": friend.id,
+            "unfriended_username": friend.username
         }
     )
