@@ -72,11 +72,23 @@ def create_post(
 @router.get("", summary="Danh sách bài viết")
 def list_posts(
     req: Request,
+    game_id: int | None = Query(default=None, ge=1),
+    user_id: int | None = Query(default=None, ge=1, description="Lọc bài viết của người dùng"),
+    friends_only: bool = Query(default=False, description="Chỉ lấy bài viết của bạn bè"),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    posts = post_crud.get_visible_posts(db, skip=skip, limit=limit)
+    posts = post_crud.get_feed_posts(
+        db,
+        current_user_id=current_user.id,
+        game_id=game_id,
+        user_id=user_id,
+        friends_only=friends_only,
+        skip=skip,
+        limit=limit,
+    )
     counts = post_crud.get_post_counts_by_id(db, [post.id for post in posts])
     results = [
         _post_response(post, *counts[post.id]).model_dump(mode="json")

@@ -128,17 +128,19 @@ Khi lỗi, API trả về JSON dạng `{"detail": "..."}`. Ví dụ: 404 khi kh�
 
 ### API bài viết
 
-Các endpoint bài viết dùng đường dẫn `/posts`. Tạo, sửa và xóa yêu cầu access token Bearer; chỉ tác giả đăng nhập mới được sửa hoặc xóa.
+Các endpoint bài viết dùng đường dẫn `/posts`. Bảng tin và các thao tác tạo, sửa, xóa yêu cầu access token Bearer; chỉ tác giả đăng nhập mới được sửa hoặc xóa.
 
 | Method | URL | Nội dung |
 |---|---|---|
 | POST | `/posts` | Tạo bài viết |
-| GET | `/posts?skip=0&limit=20` | Danh sách bài viết đang hiển thị |
+| GET | `/posts?skip=0&limit=20` | Bảng tin mới nhất (cần access token Bearer) |
 | GET | `/posts/{post_id}` | Chi tiết bài viết |
 | PUT | `/posts/{post_id}` | Cập nhật bài viết |
 | DELETE | `/posts/{post_id}` | Xóa bài viết |
 
 Nội dung dài 1–2000 ký tự. Ảnh truyền bằng `image_urls` (tối đa 4 URL, mỗi URL tối đa 500 ký tự); `image_url` đơn vẫn được hỗ trợ để tương thích. Response có `like_count`, `comment_count`, `game_ids`, trạng thái và thời gian tạo/sửa. Với database đã có bảng `posts`, chạy `sql/posts_add_image_urls.sql` một lần để thêm cột ảnh mới.
+
+Bảng tin phân trang bằng `skip`/`limit` (giới hạn `limit` tối đa 100) và hỗ trợ lọc tùy chọn `game_id`, `user_id`, `friends_only=true`. Chỉ bài `VISIBLE` được trả về; bài của người dùng có quan hệ chặn với tài khoản hiện tại cũng bị ẩn.
 
 ## 8. Frontend nối với backend thế nào?
 
