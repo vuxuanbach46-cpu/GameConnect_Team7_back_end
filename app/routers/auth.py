@@ -30,6 +30,23 @@ def create_register(req: Request, info: UserRegisterRequest, db=Depends(get_db))
         data=user_new,
     )
 
+#Code Phong chạy đăng kí
+# def create_register(req: Request, info: UserRegisterRequest, db=Depends(get_db)):
+#     user_new = create_register_service(info=info, db=db)
+
+#     user_response = UserRegisterResponse(
+#         id=user_new.id,
+#         email=user_new.email,
+#         full_name=user_new.username,
+#         role=user_new.role.value,
+#         is_active=user_new.status.value == "ACTIVE"
+#     )
+#     return api_repoint(
+#         req=req,
+#         status_code=status.HTTP_201_CREATED,
+#         message="Đăng kí tài khoản thành công",
+#         data=user_response,
+#     )
 
 @router.post("/login" , summary="Đăng nhập tài khoản" , description="Nhập thông tin đã đăng kí để đăng nhập dùng các api")
 @limiter.limit("5/minute")

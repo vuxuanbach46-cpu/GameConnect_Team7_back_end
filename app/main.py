@@ -18,19 +18,31 @@ from app.routers import users
 from app.routers import auth
 from app.routers import gamer_profile
 
-
+from app.routers import friend_request
+from app.models.comment import Comment
+from app.models.post import Post
+from app.models.post_game import PostGame
+from app.models.post_like import PostLike
+from app.models.notification import Notification
+from app.routers import auth, gamer_profile, notifications, posts, team_post, users
+from app.routers import games, user_games, admin_games
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Tự tạo các bảng còn thiếu khi server khởi động (bảng đã có thì bỏ qua).
-    # Lưu ý: create_all KHÔNG sửa bảng đã tồn tại. Đổi cột -> sửa bằng SQL hoặc xoá bảng tạo lại.
     try:
-        Base.metadata.create_all(bind=engine)
+        Base.metadata.create_all(
+            bind=engine,
+            tables=[
+                Post.__table__,
+                PostGame.__table__,
+                Comment.__table__,
+                PostLike.__table__,
+                Notification.__table__,
+            ],
+        )
         print(f"[DB] Connected to MySQL {settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}")
     except OperationalError as error:
-        print("[DB] Could not connect to MySQL. Check that MySQL is running and verify .env.")
-        if "Unknown database" in str(error.orig):
-            print("[DB] Database does not exist. Run sql/init.sql in MySQL Workbench.")
+        print("[DB] Could not initialize post tables. Check MySQL schema and .env.")
         print(f"[DB] Details: {error.orig}")
     yield
 
@@ -50,6 +62,13 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(gamer_profile.router)
+app.include_router(friend_request.router)
+app.include_router(notifications.router)
+app.include_router(team_post.router, prefix="/api")
+app.include_router(posts.router)
+app.include_router(games.router)
+app.include_router(user_games.router)
+app.include_router(admin_games.router)
 
 @app.get("/")
 def root():

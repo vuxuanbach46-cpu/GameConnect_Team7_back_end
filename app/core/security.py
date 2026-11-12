@@ -137,11 +137,11 @@ def refresh_access_token(
 
 
 # # Phân quyền admin
-# def require_admin(current_user: Session = Depends(get_current_user)):
-#     if current_user.role != "ADMIN":
-#         raise HTTPException(
-#             status_code=status.HTTP_403_FORBIDDEN,
-#             detail="Tài khoản không có quyền truy cập chức năng này",
-#         )
+def require_admin(current_user: Session = Depends(get_current_user)):
+    if current_user.role != "ADMIN":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tài khoản không có quyền truy cập chức năng này",
+        )
 
-#     return current_user
+    return current_user
