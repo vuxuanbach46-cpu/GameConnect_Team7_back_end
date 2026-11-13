@@ -9,7 +9,7 @@ from fastapi import (
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.core.security import get_current_user
+from app.core.security import get_current_user, get_optional_user
 
 from app.schemas.gamer_profile import (
     GamerProfileUpdate,
@@ -61,6 +61,7 @@ def get_my_profile(
 )
 def get_public_profile(
     username: str,
+    current_user=Depends(get_optional_user),
     db: Session = Depends(get_db)
 ):
     profile, username = get_profile_by_username(
