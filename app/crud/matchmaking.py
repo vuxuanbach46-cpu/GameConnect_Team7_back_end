@@ -316,8 +316,20 @@ def invite_friend_to_lobby(db: Session, user_id: int, friend_id: int) -> InviteF
 
 
 def accept_lobby_invite(db: Session, user_id: int, room_id: int) -> MatchRoomOut:
-    """Người được mời bấm 'Đồng ý tham gia' từ Notifications -> Gia nhập sảnh đội."""
+    """Người được mời bấm 'Đồng ý tham gia' từ Notifications -> Gia nhập sảnh đội.
+    Hỗ trợ truyền room_id HOẶC notification_id đều tự động nhận diện!
+    """
     room = db.get(MatchRoom, room_id)
+
+    # Nếu không tìm thấy phòng bằng room_id, kiểm tra xem số này có phải là notification_id không
+    if not room or room.status != RoomStatus.WAITING:
+        noti = db.get(Notification, room_id)
+        if noti and noti.recipient_id == user_id and noti.link and "accept-invite" in noti.link:
+            parts = noti.link.rstrip("/").split("/")
+            if parts and parts[-1].isdigit():
+                actual_room_id = int(parts[-1])
+                room = db.get(MatchRoom, actual_room_id)
+
     if not room or room.status != RoomStatus.WAITING:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
