@@ -10,6 +10,9 @@ from app.models.user import User
 from app.models.friend_request import FriendRequest
 from app.models.friendships import Friendship
 from app.models.block import Block
+from app.models.gamer_profile import GamerProfile
+from app.models.user_game import UserGame
+from app.models.game import Game
 
 
 def check_block(db: Session, user_a: int, user_b: int):
@@ -487,3 +490,225 @@ def get_friends_list(db: Session, current_user: User, skip: int = 0, limit: int 
                 "created_at": f.created_at
             })
     return friends
+
+
+# ===========================================================================
+# Bạn chung (Mutual Friends) & Gợi ý kết bạn (Friend Suggestions)
+# ===========================================================================
+
+def get_user_friend_ids(db: Session, user_id: int) -> set[int]:
+    """Lấy danh sách ID bạn bè của một người dùng."""
+    friendships = db.query(Friendship).filter(
+        or_(
+            Friendship.user_a == user_id,
+            Friendship.user_b == user_id,
+        )
+    ).all()
+    friend_ids = set()
+    for f in friendships:
+        friend_ids.add(f.user_b if f.user_a == user_id else f.user_a)
+    return friend_ids
+
+
+def get_mutual_friends(db: Session, current_user_id: int, target_user_id: int) -> dict:
+    """Lấy số lượng và danh sách bạn chung giữa current_user và target_user."""
+    if current_user_id == target_user_id:
+        user = db.get(User, current_user_id)
+        return {
+            "target_user_id": current_user_id,
+            "target_username": user.username if user else "",
+            "mutual_friends_count": 0,
+            "mutual_friends": [],
+        }
+
+    target_user = db.get(User, target_user_id)
+    if not target_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Người dùng mục tiêu không tồn tại trong hệ thống."
+        )
+
+    # Lấy tập bạn bè của 2 người
+    friends_current = get_user_friend_ids(db, current_user_id)
+    friends_target = get_user_friend_ids(db, target_user_id)
+    mutual_ids = friends_current.intersection(friends_target)
+
+    mutual_list = []
+    if mutual_ids:
+        users = db.query(User).filter(User.id.in_(mutual_ids)).all()
+        profiles = {
+            p.user_id: p
+            for p in db.query(GamerProfile).filter(GamerProfile.user_id.in_(mutual_ids)).all()
+        }
+        for u in users:
+            prof = profiles.get(u.id)
+            mutual_list.append({
+                "id": u.id,
+                "username": u.username,
+                "display_name": prof.display_name if (prof and prof.display_name) else u.username,
+                "avatar": prof.avatar if prof else None,
+            })
+
+    return {
+        "target_user_id": target_user.id,
+        "target_username": target_user.username,
+        "mutual_friends_count": len(mutual_ids),
+        "mutual_friends": mutual_list,
+    }
+
+
+def get_friend_suggestions(db: Session, current_user_id: int, limit: int = 20) -> dict:
+    """Gợi ý kết bạn theo bạn chung và game chung."""
+    # 1. Danh sách bạn bè hiện tại
+    my_friend_ids = get_user_friend_ids(db, current_user_id)
+
+    # 2. Danh sách những người đang có lời mời kết bạn PENDING (cả gửi và nhận)
+    pending_reqs = db.query(FriendRequest).filter(
+        and_(
+            FriendRequest.status == "PENDING",
+            or_(
+                FriendRequest.sender_id == current_user_id,
+                FriendRequest.receiver_id == current_user_id,
+            ),
+        )
+    ).all()
+    pending_ids = {
+        r.receiver_id if r.sender_id == current_user_id else r.sender_id
+        for r in pending_reqs
+    }
+
+    # 3. Danh sách người bị chặn (2 chiều)
+    blocks = db.query(Block).filter(
+        or_(
+            Block.blocker_id == current_user_id,
+            Block.blocked_id == current_user_id,
+        )
+    ).all()
+    blocked_ids = {
+        b.blocked_id if b.blocker_id == current_user_id else b.blocker_id
+        for b in blocks
+    }
+
+    # Tập ID cần loại trừ: Bạn bè đã có, lời mời đang chờ, block và chính mình
+    exclude_ids = my_friend_ids | pending_ids | blocked_ids | {current_user_id}
+
+    # 4. Lấy game của người dùng hiện tại
+    my_user_games = db.query(UserGame).filter(UserGame.user_id == current_user_id).all()
+    my_game_ids = {ug.game_id for ug in my_user_games}
+
+    # 5. Tìm các ứng viên có bạn chung (Friends of Friends)
+    fof_ids = set()
+    for fid in my_friend_ids:
+        fof_ids.update(get_user_friend_ids(db, fid))
+    fof_ids -= exclude_ids
+
+    # 6. Tìm các ứng viên có cùng game
+    game_peer_ids = set()
+    if my_game_ids:
+        ug_peers = db.query(UserGame.user_id).filter(
+            and_(
+                UserGame.game_id.in_(my_game_ids),
+                ~UserGame.user_id.in_(exclude_ids),
+            )
+        ).all()
+        game_peer_ids = {row[0] for row in ug_peers}
+
+    # Tập ứng viên tiềm năng: Ưu tiên người có bạn chung hoặc game chung
+    candidate_ids = (fof_ids | game_peer_ids) - exclude_ids
+
+    # Nếu số lượng ít hơn limit, lấy thêm các người dùng ACTIVE khác trong hệ thống
+    if len(candidate_ids) < limit:
+        other_users = db.query(User.id).filter(
+            and_(
+                User.status == "ACTIVE",
+                ~User.id.in_(exclude_ids | candidate_ids),
+            )
+        ).limit(limit - len(candidate_ids)).all()
+        candidate_ids.update(row[0] for row in other_users)
+
+    if not candidate_ids:
+        return {"total": 0, "suggestions": []}
+
+    # Lấy thông tin user, profile, game của toàn bộ ứng viên
+    candidates = db.query(User).filter(User.id.in_(candidate_ids)).all()
+    profiles = {
+        p.user_id: p
+        for p in db.query(GamerProfile).filter(GamerProfile.user_id.in_(candidate_ids)).all()
+    }
+    cand_games_data = (
+        db.query(UserGame, Game)
+        .join(Game, UserGame.game_id == Game.id)
+        .filter(UserGame.user_id.in_(candidate_ids))
+        .all()
+    )
+    cand_games_map: dict[int, list[Game]] = {}
+    for ug, g in cand_games_data:
+        cand_games_map.setdefault(ug.user_id, []).append(g)
+
+    # Danh sách tên bạn bè hiện tại để làm sample text
+    all_my_friends = {
+        u.id: u.username
+        for u in db.query(User).filter(User.id.in_(my_friend_ids)).all()
+    }
+
+    suggestions = []
+    for cand in candidates:
+        cand_friend_ids = get_user_friend_ids(db, cand.id)
+        mutual_ids = my_friend_ids.intersection(cand_friend_ids)
+        mutual_count = len(mutual_ids)
+
+        # Mẫu tên bạn chung (tối đa 2 người)
+        mutual_sample = [all_my_friends[mid] for mid in list(mutual_ids)[:2] if mid in all_my_friends]
+
+        # Game chung
+        cand_all_g = cand_games_map.get(cand.id, [])
+        shared_g = [g for g in cand_all_g if g.id in my_game_ids]
+        shared_games_count = len(shared_g)
+
+        # Điểm trọng số: Mỗi bạn chung = 3 điểm, mỗi game chung = 2 điểm
+        score = mutual_count * 3 + shared_games_count * 2
+
+        # Lý do gợi ý
+        reasons = []
+        if mutual_count > 0:
+            reasons.append(f"{mutual_count} bạn chung")
+        if shared_games_count > 0:
+            game_names = ", ".join([g.name for g in shared_g[:2]])
+            reasons.append(f"Cùng chơi {game_names}")
+        if not reasons:
+            reasons.append("Gợi ý kết bạn")
+        reason_str = " • ".join(reasons)
+
+        prof = profiles.get(cand.id)
+        suggestions.append({
+            "user_id": cand.id,
+            "username": cand.username,
+            "display_name": prof.display_name if (prof and prof.display_name) else cand.username,
+            "avatar": prof.avatar if prof else None,
+            "mutual_friends_count": mutual_count,
+            "mutual_friends_sample": mutual_sample,
+            "shared_games": [
+                {"id": g.id, "name": g.name, "image": g.image}
+                for g in shared_g
+            ],
+            "shared_games_count": shared_games_count,
+            "reason": reason_str,
+            "_score": score,
+        })
+
+    # Sắp xếp theo score giảm dần, mutual_friends_count giảm dần, shared_games_count giảm dần
+    suggestions.sort(
+        key=lambda s: (s["_score"], s["mutual_friends_count"], s["shared_games_count"]),
+        reverse=True,
+    )
+    suggestions = suggestions[:limit]
+
+    # Xóa trường `_score` nội bộ
+    for s in suggestions:
+        s.pop("_score", None)
+
+    return {
+        "total": len(suggestions),
+        "suggestions": suggestions,
+    }
+
