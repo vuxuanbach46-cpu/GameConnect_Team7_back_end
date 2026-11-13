@@ -34,5 +34,6 @@ class GameRank(Base):
 
     user_games = relationship(
         "UserGame",
-        back_populates="rank"
+        back_populates="rank",
+        passive_deletes=True,
     )

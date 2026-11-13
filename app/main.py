@@ -25,6 +25,19 @@ from app.models.matchmaking import MatchRoom, MatchRoomMember, MatchQueue
 from app.routers import auth, gamer_profile, matchmaking, notifications, posts, team_post, users
 
 
+
+from app.routers import users
+from app.routers import auth
+from app.routers import gamer_profile
+
+from app.routers import friend_request
+from app.routers import auth, gamer_profile, notifications, posts, team_post, users
+
+from app.routers import games, user_games, admin_games
+
+from app.core.auth_middleware import AuthMiddleware
+from app.routers import team_join
+    
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
@@ -62,12 +75,17 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(users.router)
+app.include_router(gamer_profile.router)
 app.include_router(friend_request.router)
 app.include_router(notifications.router)
-app.include_router(gamer_profile.router)
 app.include_router(team_post.router, prefix="/api")
 app.include_router(matchmaking.router, prefix="/api")
 app.include_router(posts.router)
+app.include_router(games.router)
+app.include_router(user_games.router)
+app.include_router(admin_games.router)
+app.include_router(team_join.router)
+app.add_middleware(AuthMiddleware)
 
 @app.get("/")
 def root():
