@@ -14,9 +14,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app.core.security import get_admin_user, get_current_user, get_optional_user
 from app.crud import team_post as team_post_crud
 from app.db.session import get_db
 from app.models.team_post import PostStatus
+from app.models.user import User
 from app.schemas.team_post import (
     TeamPostApplicationCreate,
     TeamPostApplicationOut,
@@ -41,6 +43,23 @@ def get_post_or_404(post_id: int, db: Session = Depends(get_db)):
     return post
 
 
+def require_post_owner(post, current_user: User) -> None:
+    if post.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Chỉ chủ bài đăng mới được thực hiện thao tác này",
+        )
+
+
+def get_post_owner_or_admin(
+    post=Depends(get_post_or_404),
+    current_user: User = Depends(get_current_user),
+):
+    if post.user_id != current_user.id:
+        get_admin_user(current_user)
+    return post
+
+
 def get_application_or_404(post_id: int, application_id: int, db: Session = Depends(get_db)):
     app = team_post_crud.get_application(db, application_id)
     if app is None or app.team_post_id != post_id:
@@ -59,6 +78,7 @@ def list_team_posts(
     status: PostStatus | None = Query(default=PostStatus.OPEN, description="Lọc theo trạng thái"),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
+    current_user: User | None = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ):
     return team_post_crud.get_team_posts(
@@ -67,13 +87,27 @@ def list_team_posts(
 
 
 @router.get("/{post_id}", response_model=TeamPostDetailOut)
-def get_team_post(post=Depends(get_post_or_404)):
-    return post
+def get_team_post(
+    post=Depends(get_post_or_404),
+    current_user: User | None = Depends(get_optional_user),
+):
+    result = TeamPostDetailOut.model_validate(post)
+    if current_user is None or (
+        post.user_id != current_user.id and current_user.role != "ADMIN"
+    ):
+        return result.model_copy(update={"applications": []})
+    return result
 
 
 @router.post("", response_model=TeamPostOut, status_code=status.HTTP_201_CREATED)
-def create_team_post(data: TeamPostCreate, db: Session = Depends(get_db)):
-    return team_post_crud.create_team_post(db, data)
+def create_team_post(
+    data: TeamPostCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return team_post_crud.create_team_post(
+        db, data.model_copy(update={"user_id": current_user.id})
+    )
 
 
 @router.put("/{post_id}", response_model=TeamPostOut)
@@ -81,12 +115,17 @@ def update_team_post(
     data: TeamPostUpdate,
     post=Depends(get_post_or_404),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
+    require_post_owner(post, current_user)
     return team_post_crud.update_team_post(db, post, data)
 
 
 @router.delete("/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_team_post(post=Depends(get_post_or_404), db: Session = Depends(get_db)):
+def delete_team_post(
+    post=Depends(get_post_owner_or_admin),
+    db: Session = Depends(get_db),
+):
     team_post_crud.delete_team_post(db, post)
 
 
@@ -95,7 +134,13 @@ def delete_team_post(post=Depends(get_post_or_404), db: Session = Depends(get_db
 # ---------------------------------------------------------------------------
 
 @router.get("/{post_id}/applications", response_model=list[TeamPostApplicationOut])
-def list_applications(post_id: int, db: Session = Depends(get_db)):
+def list_applications(
+    post_id: int,
+    post=Depends(get_post_or_404),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    require_post_owner(post, current_user)
     return team_post_crud.get_applications_by_post(db, post_id)
 
 
@@ -109,13 +154,21 @@ def create_application(
     data: TeamPostApplicationCreate,
     post=Depends(get_post_or_404),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
+    if post.user_id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Bạn không thể ứng tuyển vào bài đăng của chính mình",
+        )
     if post.status != PostStatus.OPEN:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Bài đăng này không còn nhận đơn ứng tuyển.",
         )
-    return team_post_crud.create_application(db, post_id, data)
+    return team_post_crud.create_application(
+        db, post_id, data.model_copy(update={"user_id": current_user.id})
+    )
 
 
 @router.put(
@@ -126,7 +179,18 @@ def update_application(
     data: TeamPostApplicationUpdate,
     application=Depends(get_application_or_404),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
+    if application.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Chỉ người gửi đơn mới được cập nhật đơn ứng tuyển",
+        )
+    if data.status.value != "CANCELLED":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Người ứng tuyển chỉ được phép rút đơn; chủ bài đăng xử lý trạng thái duyệt",
+        )
     return team_post_crud.update_application_status(db, application, data)
 
 
@@ -137,5 +201,11 @@ def update_application(
 def delete_application(
     application=Depends(get_application_or_404),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
+    if application.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Chỉ người gửi đơn mới được hủy đơn ứng tuyển",
+        )
     team_post_crud.delete_application(db, application)

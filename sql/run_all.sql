@@ -30,6 +30,10 @@ SOURCE ./seed_team_posts.sql;
 SOURCE ./match_rooms.sql;
 SOURCE ./match_room_members.sql;
 SOURCE ./match_queue.sql;
+-- 5. Module quản lý đội nhóm (Team)
+SOURCE ./teams.sql;
+SOURCE ./team_members.sql;
+SOURCE ./team_join_requests.sql;
 
 SET FOREIGN_KEY_CHECKS = 1;
 
