@@ -37,3 +37,34 @@ CREATE TABLE IF NOT EXISTS user_games (
 ) ENGINE=InnoDB
 DEFAULT CHARSET=utf8mb4
 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO user_games (
+    user_id,
+    game_id,
+    rank_id,
+    role_id,
+    in_game_id
+) VALUES
+-- User 1: League of Legends
+(1, 1, 1, 1, 'ShadowKnight#VN1'),
+
+-- User 2: Valorant
+(2, 2, 5, 6, 'DragonSlayer#VN2'),
+
+-- User 3: League of Legends
+(3, 1, 2, 3, 'MoonLight#VN3'),
+
+-- User 4: Valorant
+(4, 2, 6, 7, 'SilentWolf#VN4'),
+
+-- User 5: League of Legends
+(5, 1, 3, 4, 'CyberFox#VN5'),
+
+-- User 6: Valorant
+(6, 2, 7, 8, 'StarGamer#VN6'),
+
+-- User 7: League of Legends
+(7, 1, 4, 5, 'NightHunter#VN7'),
+
+-- User 8: Valorant
+(8, 2, 8, 9, 'IcePhoenix#VN8');

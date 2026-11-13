@@ -18,3 +18,16 @@ CREATE TABLE IF NOT EXISTS game_roles (
 ) ENGINE=InnoDB
 DEFAULT CHARSET=utf8mb4
 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO game_roles (game_id, role_name) VALUES
+-- League of Legends (game_id = 1)
+(1, 'Top'),
+(1, 'Jungle'),
+(1, 'Mid'),
+(1, 'ADC'),
+(1, 'Support'),
+
+-- Valorant (game_id = 2)
+(2, 'Duelist'),
+(2, 'Controller'),
+(2, 'Sentinel');
