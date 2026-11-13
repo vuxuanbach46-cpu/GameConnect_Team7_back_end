@@ -65,6 +65,16 @@ async def lifespan(app: FastAPI):
                     )
                     print("[DB] Added match_rooms.label column.")
 
+            if "gamer_profiles" in table_names_set:
+                gp_cols = {
+                    column["name"] for column in inspect(connection).get_columns("gamer_profiles")
+                }
+                if "is_public" not in gp_cols:
+                    connection.execute(
+                        text("ALTER TABLE gamer_profiles ADD COLUMN is_public BOOLEAN NOT NULL DEFAULT FALSE")
+                    )
+                    print("[DB] Added gamer_profiles.is_public column.")
+
         table_names = ", ".join(table.name for table in tables)
         print(f"[DB] Checked/created {len(tables)} tables: {table_names}")
         print(f"[DB] Connected to MySQL {settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}")

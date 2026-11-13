@@ -536,17 +536,26 @@ def get_mutual_friends(db: Session, current_user_id: int, target_user_id: int) -
     mutual_list = []
     if mutual_ids:
         users = db.query(User).filter(User.id.in_(mutual_ids)).all()
-        profiles = {
-            p.user_id: p
-            for p in db.query(GamerProfile).filter(GamerProfile.user_id.in_(mutual_ids)).all()
-        }
+        profiles = {}
+        try:
+            prof_rows = db.query(
+                GamerProfile.user_id,
+                GamerProfile.display_name,
+                GamerProfile.avatar,
+            ).filter(GamerProfile.user_id.in_(mutual_ids)).all()
+            profiles = {r[0]: {"display_name": r[1], "avatar": r[2]} for r in prof_rows}
+        except Exception:
+            profiles = {}
+
         for u in users:
-            prof = profiles.get(u.id)
+            prof = profiles.get(u.id, {})
+            disp = prof.get("display_name") or u.username
+            avat = prof.get("avatar")
             mutual_list.append({
                 "id": u.id,
                 "username": u.username,
-                "display_name": prof.display_name if (prof and prof.display_name) else u.username,
-                "avatar": prof.avatar if prof else None,
+                "display_name": disp,
+                "avatar": avat,
             })
 
     return {
@@ -631,10 +640,16 @@ def get_friend_suggestions(db: Session, current_user_id: int, limit: int = 20) -
 
     # Lấy thông tin user, profile, game của toàn bộ ứng viên
     candidates = db.query(User).filter(User.id.in_(candidate_ids)).all()
-    profiles = {
-        p.user_id: p
-        for p in db.query(GamerProfile).filter(GamerProfile.user_id.in_(candidate_ids)).all()
-    }
+    profiles = {}
+    try:
+        prof_rows = db.query(
+            GamerProfile.user_id,
+            GamerProfile.display_name,
+            GamerProfile.avatar,
+        ).filter(GamerProfile.user_id.in_(candidate_ids)).all()
+        profiles = {r[0]: {"display_name": r[1], "avatar": r[2]} for r in prof_rows}
+    except Exception:
+        profiles = {}
     cand_games_data = (
         db.query(UserGame, Game)
         .join(Game, UserGame.game_id == Game.id)
@@ -679,12 +694,14 @@ def get_friend_suggestions(db: Session, current_user_id: int, limit: int = 20) -
             reasons.append("Gợi ý kết bạn")
         reason_str = " • ".join(reasons)
 
-        prof = profiles.get(cand.id)
+        prof = profiles.get(cand.id, {})
+        disp = prof.get("display_name") or cand.username
+        avat = prof.get("avatar")
         suggestions.append({
             "user_id": cand.id,
             "username": cand.username,
-            "display_name": prof.display_name if (prof and prof.display_name) else cand.username,
-            "avatar": prof.avatar if prof else None,
+            "display_name": disp,
+            "avatar": avat,
             "mutual_friends_count": mutual_count,
             "mutual_friends_sample": mutual_sample,
             "shared_games": [
