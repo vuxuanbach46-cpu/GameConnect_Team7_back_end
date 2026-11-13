@@ -23,6 +23,7 @@ from app.routers import friend_request
 from app.routers import auth, gamer_profile, notifications, posts, team_post, users
 
 from app.routers import games, user_games, admin_games
+from app.routers import matchmaking
 
 from app.core.auth_middleware import AuthMiddleware
 from app.routers import team_join
@@ -36,21 +37,33 @@ async def lifespan(app: FastAPI):
 
         Base.metadata.create_all(bind=engine, tables=tables, checkfirst=True)
         with engine.begin() as connection:
-            post_columns = {
-                column["name"] for column in inspect(connection).get_columns("posts")
-            }
-            if "image_urls" not in post_columns:
-                connection.execute(
-                    text("ALTER TABLE posts ADD COLUMN image_urls JSON NULL")
-                )
-                connection.execute(
-                    text(
-                        "UPDATE posts "
-                        "SET image_urls = JSON_ARRAY(image_url) "
-                        "WHERE image_url IS NOT NULL AND image_url <> ''"
+            table_names_set = set(inspect(connection).get_table_names())
+            if "posts" in table_names_set:
+                post_columns = {
+                    column["name"] for column in inspect(connection).get_columns("posts")
+                }
+                if "image_urls" not in post_columns:
+                    connection.execute(
+                        text("ALTER TABLE posts ADD COLUMN image_urls JSON NULL")
                     )
-                )
-                print("[DB] Added posts.image_urls and migrated existing image URLs.")
+                    connection.execute(
+                        text(
+                            "UPDATE posts "
+                            "SET image_urls = JSON_ARRAY(image_url) "
+                            "WHERE image_url IS NOT NULL AND image_url <> ''"
+                        )
+                    )
+                    print("[DB] Added posts.image_urls and migrated existing image URLs.")
+
+            if "match_rooms" in table_names_set:
+                match_rooms_cols = {
+                    column["name"] for column in inspect(connection).get_columns("match_rooms")
+                }
+                if "label" not in match_rooms_cols:
+                    connection.execute(
+                        text("ALTER TABLE match_rooms ADD COLUMN label VARCHAR(100) NULL AFTER max_rank_id")
+                    )
+                    print("[DB] Added match_rooms.label column.")
 
         table_names = ", ".join(table.name for table in tables)
         print(f"[DB] Checked/created {len(tables)} tables: {table_names}")
@@ -81,6 +94,7 @@ app.include_router(gamer_profile.router)
 app.include_router(friend_request.router)
 app.include_router(notifications.router)
 app.include_router(team_post.router, prefix="/api")
+app.include_router(matchmaking.router, prefix="/api")
 app.include_router(posts.router)
 app.include_router(games.router)
 app.include_router(user_games.router)

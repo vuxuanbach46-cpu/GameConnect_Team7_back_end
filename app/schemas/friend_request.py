@@ -20,7 +20,6 @@ class FriendRequestResponse(BaseModel):
 class FriendRequestUserInfo(BaseModel):
     id: int
     username: str
-    email: str
 
 
 class FriendRequestListResponse(BaseModel):
