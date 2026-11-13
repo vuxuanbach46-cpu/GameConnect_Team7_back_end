@@ -8,16 +8,13 @@ from app.schemas.auth import (
 from app.db.session import get_db
 from app.crud.auth import create_register_service, login_service
 from app.schemas.api_response import api_repoint
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-from app.core.security import refresh_access_token
+from app.core.security import oauth2_schema, refresh_access_token
 from app.core.limiter import limiter
 
 
 router = APIRouter(prefix="/auth", tags=["AUTH"])
-
-oauth2_schema = HTTPBearer()
-
 
 @router.post("/register" , summary="Đăng ký tài khoản" , description="Người dùng nhập thông tin để đăng kí tài khoản")
 def create_register(req: Request, info: UserRegisterRequest, db=Depends(get_db)):
@@ -30,6 +27,23 @@ def create_register(req: Request, info: UserRegisterRequest, db=Depends(get_db))
         data=user_new,
     )
 
+#Code Phong chạy đăng kí
+# def create_register(req: Request, info: UserRegisterRequest, db=Depends(get_db)):
+#     user_new = create_register_service(info=info, db=db)
+
+#     user_response = UserRegisterResponse(
+#         id=user_new.id,
+#         email=user_new.email,
+#         full_name=user_new.username,
+#         role=user_new.role.value,
+#         is_active=user_new.status.value == "ACTIVE"
+#     )
+#     return api_repoint(
+#         req=req,
+#         status_code=status.HTTP_201_CREATED,
+#         message="Đăng kí tài khoản thành công",
+#         data=user_response,
+#     )
 
 @router.post("/login" , summary="Đăng nhập tài khoản" , description="Nhập thông tin đã đăng kí để đăng nhập dùng các api")
 @limiter.limit("5/minute")
