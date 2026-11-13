@@ -256,33 +256,43 @@ def create_team_post(
         expires_at = user_expiry
 
     # 7. Lưu bài đăng
-    post = TeamPost(
-        user_id=user_id,
-        game_id=data.game_id,
-        title=data.title,
-        min_rank_id=data.min_rank_id,
-        max_rank_id=data.max_rank_id,
-        needed_players=data.needed_players,
-        play_time=data.play_time,
-        region=data.region,
-        description=data.description,
-        status=PostStatus.OPEN,
-        expires_at=expires_at,
-    )
-    db.add(post)
-    db.flush()
-
-    for r_id in unique_role_ids:
-        role = TeamPostRole(
-            team_post_id=post.id,
-            game_id=post.game_id,
-            game_role_id=r_id,
+    try:
+        post = TeamPost(
+            user_id=user_id,
+            game_id=data.game_id,
+            title=data.title,
+            min_rank_id=data.min_rank_id,
+            max_rank_id=data.max_rank_id,
+            needed_players=data.needed_players,
+            play_time=data.play_time,
+            region=data.region,
+            description=data.description,
+            status=PostStatus.OPEN,
+            expires_at=expires_at,
         )
-        db.add(role)
+        db.add(post)
+        db.flush()
 
-    db.commit()
-    db.refresh(post)
-    return post
+        for r_id in unique_role_ids:
+            role = TeamPostRole(
+                team_post_id=post.id,
+                game_id=post.game_id,
+                game_role_id=r_id,
+            )
+            db.add(role)
+
+        db.commit()
+        db.refresh(post)
+        return post
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Lỗi hệ thống khi lưu bài đăng: {str(exc)}",
+        )
 
 
 def update_team_post(db: Session, post: TeamPost, data: TeamPostUpdate) -> TeamPost:
@@ -377,17 +387,37 @@ def update_team_post(db: Session, post: TeamPost, data: TeamPostUpdate) -> TeamP
             )
             db.add(role)
 
-    db.commit()
-    db.refresh(post)
-    return post
+    try:
+        db.commit()
+        db.refresh(post)
+        return post
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Lỗi hệ thống khi cập nhật bài đăng: {str(exc)}",
+        )
 
 
 def close_team_post(db: Session, post: TeamPost) -> TeamPost:
     """Đóng bài đăng tìm đội sớm (status -> CLOSED)."""
     post.status = PostStatus.CLOSED
-    db.commit()
-    db.refresh(post)
-    return post
+    try:
+        db.commit()
+        db.refresh(post)
+        return post
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Lỗi hệ thống khi cập nhật bài đăng: {str(exc)}",
+        )
 
 
 def delete_team_post(db: Session, post: TeamPost) -> None:
