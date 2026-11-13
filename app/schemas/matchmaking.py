@@ -14,20 +14,38 @@ class RoomMemberOut(BaseModel):
     joined_at: datetime
 
 
-class CreateMatchRoomRequest(BaseModel):
-    game_id: int = Field(default=1, examples=[1], description="ID Game (vd: 1)")
-    room_name: str = Field(default="Phòng leo rank tối nay, mic on", min_length=1, max_length=150, examples=["Phòng leo rank tối nay, mic on"])
-    game_code: str = Field(default="AMONG-9981", min_length=1, max_length=100, examples=["AMONG-9981", "VALO-7721"])
-    max_players: int = Field(default=2, ge=2, le=50, examples=[2], description="Số người tối đa để đủ đội")
-    min_rank_id: int | None = Field(default=None, examples=[None], description="Rank tối thiểu (để null nếu không yêu cầu; bắt buộc null nếu game không có rank)")
-    max_rank_id: int | None = Field(default=None, examples=[None], description="Rank tối đa (để null nếu không yêu cầu; bắt buộc null nếu game không có rank)")
-    label: str | None = Field(default=None, examples=["Tryhard"], description="Nhãn / Phong cách chơi: Tryhard, Vui vẻ, Có Mic... (để null nếu không chọn)")
+class CreateLobbyRequest(BaseModel):
+    """Tạo sảnh đội (Lobby) để chuẩn bị mời bạn bè hoặc tìm trận."""
+    game_id: int = Field(default=1, examples=[1], description="ID Game muốn chơi")
+    max_players: int = Field(default=5, ge=2, le=50, examples=[5], description="Số người tối đa của đội (mặc định 5)")
+    min_rank_id: int | None = Field(default=None, examples=[None], description="Rank tối thiểu (để null nếu không yêu cầu)")
+    max_rank_id: int | None = Field(default=None, examples=[None], description="Rank tối đa (để null nếu không yêu cầu)")
+    label: str | None = Field(default=None, examples=["Tryhard"], description="Phong cách chơi: Tryhard, Vui vẻ, Có Mic... (để null nếu không chọn)")
+
+
+class CreateMatchRoomRequest(CreateLobbyRequest):
+    """Tương thích ngược với CreateMatchRoomRequest."""
+    room_name: str | None = Field(default=None, max_length=150)
+    game_code: str | None = Field(default=None, max_length=100)
+
+
+class InviteFriendResponse(BaseModel):
+    message: str
+    friend_id: int
+    friend_username: str
+    notification_id: int | None = None
 
 
 class QuickMatchRequest(BaseModel):
-    game_id: int = Field(default=1, examples=[1], description="ID Game muốn tìm phòng (vd: 1)")
+    """Tìm đội nhanh (Nút cam FIND MATCH)."""
+    game_id: int = Field(default=1, examples=[1], description="ID Game muốn tìm phòng")
     label: str | None = Field(default=None, examples=["Tryhard"], description="Ưu tiên ghép vào phòng có cùng nhãn này (để null nếu chơi tự do)")
     rank_id: int | None = Field(default=None, examples=[None], description="Rank của bạn (để null nếu không yêu cầu)")
+
+
+class FindMatchRequest(QuickMatchRequest):
+    """Alias cho QuickMatchRequest."""
+    pass
 
 
 class MatchRoomOut(BaseModel):
@@ -57,6 +75,7 @@ class MyRoomResponse(BaseModel):
 
 
 class QuickMatchResponse(BaseModel):
-    status: str = Field(description="'MATCHED' hoặc 'NO_ROOM'")
+    status: str = Field(description="'MATCHED' hoặc 'SEARCHING' hoặc 'NO_ROOM'")
     message: str
     room: MatchRoomOut | None = None
+
