@@ -8,15 +8,21 @@ from app.core.security import (
     verify_password,
     create_refresh_token,
 )
+from sqlalchemy.exc import IntegrityError
 
 
 def create_register_service(info: UserRegisterRequest, db: Session):
     """Tạo tài khoản user"""
     duplicate_email = db.query(User).filter(User.email == info.email).first()
-
     if duplicate_email:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Email đã tồn tại"
+            status_code=status.HTTP_409_CONFLICT, detail="Email đã tồn tại"
+        )
+
+    duplicate_username = db.query(User).filter(User.username == info.full_name).first()
+    if duplicate_username:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Tên người dùng đã tồn tại"
         )
 
     hash_pass = hash_password(info.password)
@@ -28,7 +34,15 @@ def create_register_service(info: UserRegisterRequest, db: Session):
     )
 
     db.add(user_new)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as error:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email hoặc tên người dùng đã tồn tại",
+        ) from error
+
     db.refresh(user_new)
 
     return user_new

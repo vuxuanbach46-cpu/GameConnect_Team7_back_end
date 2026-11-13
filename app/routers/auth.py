@@ -8,16 +8,13 @@ from app.schemas.auth import (
 from app.db.session import get_db
 from app.crud.auth import create_register_service, login_service
 from app.schemas.api_response import api_repoint
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-from app.core.security import refresh_access_token
+from app.core.security import oauth2_schema, refresh_access_token
 from app.core.limiter import limiter
 
 
 router = APIRouter(prefix="/auth", tags=["AUTH"])
-
-oauth2_schema = HTTPBearer()
-
 
 @router.post("/register" , summary="Đăng ký tài khoản" , description="Người dùng nhập thông tin để đăng kí tài khoản")
 def create_register(req: Request, info: UserRegisterRequest, db=Depends(get_db)):

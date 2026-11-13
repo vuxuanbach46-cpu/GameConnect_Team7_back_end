@@ -11,11 +11,19 @@ router = APIRouter(prefix="/notifications", tags=["Notifications"])
 
 
 def notification_data(notification: Notification):
+    # Tự động trích xuất room_id nếu đây là thông báo mời đội (PARTY_INVITE)
+    room_id = None
+    if notification.link and "accept-invite" in notification.link:
+        parts = notification.link.rstrip("/").split("/")
+        if parts and parts[-1].isdigit():
+            room_id = int(parts[-1])
+
     return {
         "id": notification.id,
         "recipient_id": notification.recipient_id,
         "type": notification.type,
         "content": notification.content,
+        "room_id": room_id,
         "link": notification.link,
         "is_read": notification.is_read,
         "created_at": notification.created_at,

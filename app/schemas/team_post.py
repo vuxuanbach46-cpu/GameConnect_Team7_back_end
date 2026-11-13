@@ -27,7 +27,10 @@ class TeamPostBase(BaseModel):
 
 class TeamPostCreate(TeamPostBase):
     """Dữ liệu FE gửi lên khi TẠO bài đăng."""
-    user_id: int = Field(examples=[1], description="ID người đăng (FK → users.id)")
+    user_id: int | None = Field(
+        default=None,
+        description="Được lấy từ tài khoản đã đăng nhập, không lấy từ request.",
+    )
     role_ids: list[int] = Field(
         default=[], examples=[[2, 4]], description="Danh sách game_role_id cần tuyển"
     )
@@ -70,11 +73,14 @@ class TeamPostApplicationBase(BaseModel):
 
 class TeamPostApplicationCreate(TeamPostApplicationBase):
     """Dữ liệu FE gửi lên khi NỘP đơn ứng tuyển."""
-    user_id: int = Field(examples=[5], description="ID người ứng tuyển (FK → users.id)")
+    user_id: int | None = Field(
+        default=None,
+        description="Được lấy từ tài khoản đã đăng nhập, không lấy từ request.",
+    )
 
 
 class TeamPostApplicationUpdate(BaseModel):
-    """Cập nhật trạng thái đơn (poster duyệt / từ chối, hoặc applicant tự rút)."""
+    """Người ứng tuyển có thể rút đơn; chủ bài đăng xử lý trạng thái duyệt."""
     status: ApplicationStatus
 
 

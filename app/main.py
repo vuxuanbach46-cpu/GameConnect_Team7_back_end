@@ -7,49 +7,78 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.exc import OperationalError
-from slowapi import _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
+from sqlalchemy import inspect, text
+from sqlalchemy.exc import SQLAlchemyError
 from app import models  # noqa: F401 - import để SQLAlchemy biết các bảng
 from app.core.config import settings
+from app.core.exceptions import register_exception_handlers
 from app.core.limiter import limiter
 from app.db.session import Base, engine
+
 from app.routers import users
 from app.routers import auth
 from app.routers import gamer_profile
 
 from app.routers import friend_request
-from app.models.comment import Comment
-from app.models.post import Post
-from app.models.post_game import PostGame
-from app.models.post_like import PostLike
-from app.models.notification import Notification
 from app.routers import auth, gamer_profile, notifications, posts, team_post, users
-from app.routers import games, user_games, admin_games
 
+from app.routers import games, user_games, admin_games
+from app.routers import matchmaking
+
+from app.core.auth_middleware import AuthMiddleware
+from app.routers import team_join
+    
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
-        Base.metadata.create_all(
-            bind=engine,
-            tables=[
-                Post.__table__,
-                PostGame.__table__,
-                Comment.__table__,
-                PostLike.__table__,
-                Notification.__table__,
-            ],
-        )
+        tables = Base.metadata.sorted_tables
+        if not tables:
+            raise RuntimeError("No SQLAlchemy models are registered in Base.metadata.")
+
+        Base.metadata.create_all(bind=engine, tables=tables, checkfirst=True)
+        with engine.begin() as connection:
+            table_names_set = set(inspect(connection).get_table_names())
+            if "posts" in table_names_set:
+                post_columns = {
+                    column["name"] for column in inspect(connection).get_columns("posts")
+                }
+                if "image_urls" not in post_columns:
+                    connection.execute(
+                        text("ALTER TABLE posts ADD COLUMN image_urls JSON NULL")
+                    )
+                    connection.execute(
+                        text(
+                            "UPDATE posts "
+                            "SET image_urls = JSON_ARRAY(image_url) "
+                            "WHERE image_url IS NOT NULL AND image_url <> ''"
+                        )
+                    )
+                    print("[DB] Added posts.image_urls and migrated existing image URLs.")
+
+            if "match_rooms" in table_names_set:
+                match_rooms_cols = {
+                    column["name"] for column in inspect(connection).get_columns("match_rooms")
+                }
+                if "label" not in match_rooms_cols:
+                    connection.execute(
+                        text("ALTER TABLE match_rooms ADD COLUMN label VARCHAR(100) NULL AFTER max_rank_id")
+                    )
+                    print("[DB] Added match_rooms.label column.")
+
+        table_names = ", ".join(table.name for table in tables)
+        print(f"[DB] Checked/created {len(tables)} tables: {table_names}")
         print(f"[DB] Connected to MySQL {settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}")
-    except OperationalError as error:
-        print("[DB] Could not initialize post tables. Check MySQL schema and .env.")
-        print(f"[DB] Details: {error.orig}")
+    except SQLAlchemyError as error:
+        print("[DB] Could not initialize database tables. Check MySQL schema and .env.")
+        print(f"[DB] SQLAlchemy error: {error}")
+    except RuntimeError as error:
+        print(f"[DB] Model registration error: {error}")
     yield
 
 
 app = FastAPI(title=settings.APP_NAME, lifespan=lifespan)
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+register_exception_handlers(app)
 
 # CORS: cho phép trang FE (khác cổng/khác domain) gọi được API này
 app.add_middleware(
@@ -65,10 +94,13 @@ app.include_router(gamer_profile.router)
 app.include_router(friend_request.router)
 app.include_router(notifications.router)
 app.include_router(team_post.router, prefix="/api")
+app.include_router(matchmaking.router, prefix="/api")
 app.include_router(posts.router)
 app.include_router(games.router)
 app.include_router(user_games.router)
 app.include_router(admin_games.router)
+app.include_router(team_join.router)
+app.add_middleware(AuthMiddleware)
 
 @app.get("/")
 def root():
