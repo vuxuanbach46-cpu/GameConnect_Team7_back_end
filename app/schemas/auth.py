@@ -40,3 +40,6 @@ class UserProfileResponse(BaseModel):
     username: str
     role: str
     status: str
+
+class LogoutRequest(BaseModel):
+    refresh_token: str

@@ -17,6 +17,19 @@ from app.core.exceptions import register_exception_handlers
 from app.core.limiter import limiter
 from app.db.session import Base, engine
 
+from app.routers import users
+from app.routers import auth
+from app.routers import gamer_profile
+
+from app.routers import friend_request
+from app.routers import auth, gamer_profile, notifications, posts, team_post, users
+
+from app.routers import games, user_games, admin_games
+from app.routers import matchmaking
+
+from app.core.auth_middleware import AuthMiddleware
+from app.routers import team_join
+
 from app.routers import auth, gamer_profile, notifications, posts, team_post, users
 from app.routers import friend_request
 from app.routers import games, user_games, admin_games
@@ -98,16 +111,6 @@ app.include_router(user_games.router)
 app.include_router(admin_games.router)
 app.include_router(team_join.router)
 app.add_middleware(AuthMiddleware)
-
-@app.get("/api/health", summary="Health check endpoint cho frontend")
-def health_check():
-    try:
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-        return {"status": "ok", "database": "connected"}
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=str(e))
-
 
 @app.get("/")
 def root():
