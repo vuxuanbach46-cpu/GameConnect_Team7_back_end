@@ -14,10 +14,10 @@ class Settings(BaseSettings):
 
     APP_NAME: str = "KS25 Base API"
 
-    DB_HOST: str = "127.0.0.1"
+    DB_HOST: str = "localhost"
     DB_PORT: int = 3306
     DB_USER: str = "root"
-    DB_PASSWORD: str = ""
+    DB_PASSWORD: str = "2632006"
     DB_NAME: str = "app_db"
 
     SECRET_KEY: str = Field(default_factory=lambda: secrets.token_urlsafe(32))

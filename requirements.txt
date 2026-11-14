@@ -13,3 +13,4 @@ python-jose[cryptography]
 PyJWT[crypto]
 passlib[bcrypt]
 slowapi
+httpx>=0.28.0

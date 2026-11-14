@@ -1,4 +1,5 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, ConfigDict
+from datetime import datetime
 
 # Gửi thông tin đăng ký 
 class UserRegisterRequest(BaseModel):
@@ -8,14 +9,14 @@ class UserRegisterRequest(BaseModel):
 
 # Trả về thông tin user sau khi đăng ký thành công
 class UserRegisterResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     email: str
-    full_name: str
+    username: str
     role: str
-    is_active: bool
-
-    class Config:
-        from_attributes = True
+    status: str
+    created_at: datetime
         
 # Gửi thông tin đăng nhập
 class UserLoginRequest(BaseModel):
@@ -32,11 +33,13 @@ class UserLoginResponse(BaseModel):
 
 # Gửi thông tin account hiện tại 
 class UserProfileResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     email: str
-    full_name: str
+    username: str
     role: str
-    is_active: bool
+    status: str
 
-    class Config:
-        from_attributes = True
+class LogoutRequest(BaseModel):
+    refresh_token: str

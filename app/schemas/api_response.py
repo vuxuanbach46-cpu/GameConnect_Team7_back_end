@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional, Any
 from fastapi import Request
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class APIRepoint(BaseModel):
@@ -14,13 +14,17 @@ class APIRepoint(BaseModel):
 
 
 def api_repoint(
-    req: Request, status_code: int, message: str, data: Any = None, error: Any = None
+    req: Request,
+    status_code: int,
+    message: str,
+    data: Any = None,
+    error: Any = None,
 ):
     return APIRepoint(
         status_code=status_code,
         message=message,
         data=data,
         error=error,
-        timestamp=datetime.now().isoformat(),
+        timestamp=datetime.now(timezone.utc).isoformat(),
         path=req.url.path,
     )
