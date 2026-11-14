@@ -5,10 +5,12 @@ Tài liệu API tự sinh: http://127.0.0.1:8000/docs
 """
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect, text
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from app import models  # noqa: F401 - import để SQLAlchemy biết các bảng
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
@@ -27,6 +29,14 @@ from app.routers import matchmaking
 
 from app.core.auth_middleware import AuthMiddleware
 from app.routers import team_join
+
+from app.routers import auth, gamer_profile, notifications, posts, team_post, users
+from app.routers import friend_request
+from app.routers import games, user_games, admin_games
+from app.routers import matchmaking
+from app.core.auth_middleware import AuthMiddleware
+from app.routers import team_join
+
     
 @asynccontextmanager
 async def lifespan(app: FastAPI):

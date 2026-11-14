@@ -120,12 +120,14 @@ def get_optional_user(
 
     if user is None:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Người dùng không tồn tại"
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Người dùng không tồn tại"
         )
 
     if user.status != "ACTIVE":
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Tài khoản đã bị vô hiệu hóa"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tài khoản đã bị vô hiệu hóa"
         )
 
     return user
@@ -141,7 +143,9 @@ def get_admin_user(current_user: User = Depends(get_current_user)):
 
     return current_user
 
+    return current_user
 
+# Cấp lại access token từ refresh token
 def refresh_access_token(
     access_token: str,
     refresh_token: str,
