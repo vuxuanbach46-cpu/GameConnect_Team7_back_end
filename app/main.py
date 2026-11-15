@@ -29,6 +29,7 @@ from app.routers import matchmaking
 
 from app.core.auth_middleware import AuthMiddleware
 from app.routers import team_join
+from app.routers import reports
 
 from app.routers import auth, gamer_profile, notifications, posts, team_post, users
 from app.routers import friend_request
@@ -110,6 +111,7 @@ app.include_router(games.router)
 app.include_router(user_games.router)
 app.include_router(admin_games.router)
 app.include_router(team_join.router)
+app.include_router(reports.router)
 app.add_middleware(AuthMiddleware)
 
 @app.get("/")
