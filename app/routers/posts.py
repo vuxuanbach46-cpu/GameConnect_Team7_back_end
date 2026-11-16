@@ -63,7 +63,7 @@ def create_post(
         post = post_crud.create_post(db, data, current_user.id)
     except ValueError as error:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
         ) from error
     result = _post_response(post, 0, 0)
     return api_repoint(
@@ -132,7 +132,7 @@ def update_post(
         post = post_crud.update_post(db, post, data)
     except ValueError as error:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
         ) from error
     like_count, comment_count = post_crud.get_post_counts(db, post_id)
     result = _post_response(post, like_count, comment_count)
