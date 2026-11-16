@@ -10,7 +10,10 @@ from app.models.user import User
 from fastapi import Request
 import uuid
 from app.models.revoked_token import RevokedToken
-from sqlalchemy.exc import IntegrityError   
+from sqlalchemy.exc import IntegrityError
+import re
+from app.models.user import User, AuthProvider, UserRole, UserStatus
+import secrets
 
 # Dùng cho Access Token
 oauth2_schema = HTTPBearer(scheme_name="AccessToken", description="Nhập Access Token")
@@ -84,6 +87,11 @@ def get_current_user(
     db: Session = Depends(get_db),
 ):
     user_id = getattr(request.state, "user_id", None)
+    if user_id is None and credentials and credentials.credentials:
+        try:
+            user_id = decode_access_token(credentials.credentials)
+        except Exception:
+            user_id = None
 
     if user_id is None:
         raise HTTPException(
@@ -120,14 +128,12 @@ def get_optional_user(
 
     if user is None:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Người dùng không tồn tại"
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Người dùng không tồn tại"
         )
 
     if user.status != "ACTIVE":
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Tài khoản đã bị vô hiệu hóa"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Tài khoản đã bị vô hiệu hóa"
         )
 
     return user
@@ -144,6 +150,7 @@ def get_admin_user(current_user: User = Depends(get_current_user)):
     return current_user
 
     return current_user
+
 
 # Cấp lại access token từ refresh token
 def refresh_access_token(
@@ -299,3 +306,116 @@ def require_admin(current_user: Session = Depends(get_current_user)):
         )
 
     return current_user
+
+
+def generate_google_username(email: str, db: Session):
+    base_username = email.split("@")[0].lower()
+    base_username = re.sub(r"[^a-z0-9_]", "", base_username)
+
+    if not base_username:
+        base_username = "google_user"
+
+    username = base_username
+
+    while db.query(User).filter(User.username == username).first():
+        username = f"{base_username}_{secrets.token_hex(3)}"
+
+    return username
+
+
+def google_login_service(user_info: dict, db: Session):
+
+    # 1. Lấy thông tin Google
+    google_id = user_info.get("sub")
+    email = user_info.get("email")
+    email_verified = user_info.get("email_verified")
+
+    if not google_id or not email or email_verified is not True:
+        raise HTTPException(
+            status_code=400, detail="Thông tin tài khoản Google không hợp lệ"
+        )
+
+    email = email.strip().lower()
+
+    try:
+        # 2. Tìm user bằng Google ID
+        user = db.query(User).filter(User.google_id == google_id).first()
+
+        if not user:
+
+            # 3. Kiểm tra email đã tồn tại chưa
+            user = db.query(User).filter(User.email == email).first()
+
+            if user:
+                # Không tự động liên kết nếu email đã thuộc tài khoản LOCAL
+                if user.auth_provider == AuthProvider.LOCAL:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Email đã được đăng ký. Vui lòng đăng nhập bằng tài khoản hiện tại.",
+                    )
+
+                user.google_id = google_id
+
+            else:
+                # 4. Tạo user mới
+                user = User(
+                    email=email,
+                    username=generate_google_username(email, db),
+                    google_id=google_id,
+                    password_hash=None,
+                    auth_provider=AuthProvider.GOOGLE,
+                    role=UserRole.USER,
+                    status=UserStatus.ACTIVE,
+                )
+
+                db.add(user)
+                db.flush()
+
+        # 5. Kiểm tra trạng thái tài khoản
+        if user.status != UserStatus.ACTIVE:
+            raise HTTPException(status_code=403, detail="Tài khoản của bạn đã bị khóa")
+
+        # 6. Cập nhật lần đăng nhập cuối
+        user.last_seen = datetime.now()
+
+        db.commit()
+        db.refresh(user)
+
+        # 7. Tạo Access Token đúng cơ chế security.py
+        access_token = create_access_token(
+            data={
+                "sub": str(user.id),
+                "email": user.email,
+                "role": user.role.value,
+            }
+        )
+
+        # 8. Tạo Refresh Token
+        refresh_token = create_refresh_token(
+            data={
+                "sub": str(user.id),
+            }
+        )
+
+        # 9. Trả kết quả
+        return {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "token_type": "bearer",
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "username": user.username,
+                "role": user.role.value,
+                "status": user.status.value,
+                "auth_provider": user.auth_provider.value,
+            },
+        }
+
+    except HTTPException:
+        db.rollback()
+        raise
+
+    except Exception:
+        db.rollback()
+        raise

@@ -35,10 +35,21 @@ class AuthMiddleware(BaseHTTPMiddleware):
     ) -> Response:
         request.state.user_id = None
 
-        if request.method == "POST" and request.url.path in {
-            "/auth/refresh",
-            "/auth/logout",
-        }:
+        path = request.url.path.rstrip("/")
+        if any(
+            path.endswith(p)
+            for p in (
+                "/auth/login",
+                "/auth/register",
+                "/auth/refresh",
+                "/auth/logout",
+                "/auth/google/login",
+                "/auth/google/callback",
+                "/docs",
+                "/openapi.json",
+                "/redoc",
+            )
+        ):
             return await call_next(request)
 
         authorization = request.headers.get("Authorization")

@@ -3,41 +3,29 @@
 Chạy:  uvicorn app.main:app --reload
 Tài liệu API tự sinh: http://127.0.0.1:8000/docs
 """
+
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect, text
-from sqlalchemy.exc import OperationalError, SQLAlchemyError
-from slowapi import _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
+from sqlalchemy.exc import SQLAlchemyError
 from app import models  # noqa: F401 - import để SQLAlchemy biết các bảng
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
 from app.core.limiter import limiter
 from app.db.session import Base, engine
-
-from app.routers import users
-from app.routers import auth
-from app.routers import gamer_profile
-
-from app.routers import friend_request
-from app.routers import auth, gamer_profile, notifications, posts, team_post, users
-
-from app.routers import games, user_games, admin_games
-from app.routers import matchmaking
-
-from app.core.auth_middleware import AuthMiddleware
-from app.routers import team_join
+from starlette.middleware.sessions import SessionMiddleware
 
 from app.routers import auth, gamer_profile, notifications, posts, team_post, users
-from app.routers import friend_request
 from app.routers import games, user_games, admin_games
 from app.routers import matchmaking
 from app.core.auth_middleware import AuthMiddleware
-from app.routers import team_join
+from app.routers import friend_request
+from app.routers import team_join , team
 
-    
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
@@ -50,7 +38,8 @@ async def lifespan(app: FastAPI):
             table_names_set = set(inspect(connection).get_table_names())
             if "posts" in table_names_set:
                 post_columns = {
-                    column["name"] for column in inspect(connection).get_columns("posts")
+                    column["name"]
+                    for column in inspect(connection).get_columns("posts")
                 }
                 if "image_urls" not in post_columns:
                     connection.execute(
@@ -63,21 +52,44 @@ async def lifespan(app: FastAPI):
                             "WHERE image_url IS NOT NULL AND image_url <> ''"
                         )
                     )
-                    print("[DB] Added posts.image_urls and migrated existing image URLs.")
+                    print(
+                        "[DB] Added posts.image_urls and migrated existing image URLs."
+                    )
 
             if "match_rooms" in table_names_set:
                 match_rooms_cols = {
-                    column["name"] for column in inspect(connection).get_columns("match_rooms")
+                    column["name"]
+                    for column in inspect(connection).get_columns("match_rooms")
                 }
                 if "label" not in match_rooms_cols:
                     connection.execute(
-                        text("ALTER TABLE match_rooms ADD COLUMN label VARCHAR(100) NULL AFTER max_rank_id")
+                        text(
+                            "ALTER TABLE match_rooms ADD COLUMN label VARCHAR(100) NULL AFTER max_rank_id"
+                        )
                     )
                     print("[DB] Added match_rooms.label column.")
 
+            if "users" in table_names_set:
+                user_cols = {
+                    column["name"]
+                    for column in inspect(connection).get_columns("users")
+                }
+                if "google_id" not in user_cols:
+                    connection.execute(
+                        text("ALTER TABLE users ADD COLUMN google_id VARCHAR(255) NULL UNIQUE")
+                    )
+                    print("[DB] Added users.google_id column.")
+                if "auth_provider" not in user_cols:
+                    connection.execute(
+                        text("ALTER TABLE users ADD COLUMN auth_provider ENUM('LOCAL', 'GOOGLE') NOT NULL DEFAULT 'LOCAL'")
+                    )
+                    print("[DB] Added users.auth_provider column.")
+
         table_names = ", ".join(table.name for table in tables)
         print(f"[DB] Checked/created {len(tables)} tables: {table_names}")
-        print(f"[DB] Connected to MySQL {settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}")
+        print(
+            f"[DB] Connected to MySQL {settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
+        )
     except SQLAlchemyError as error:
         print("[DB] Could not initialize database tables. Check MySQL schema and .env.")
         print(f"[DB] SQLAlchemy error: {error}")
@@ -90,10 +102,20 @@ app = FastAPI(title=settings.APP_NAME, lifespan=lifespan)
 app.state.limiter = limiter
 register_exception_handlers(app)
 
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.SESSION_SECRET_KEY,
+    same_site="lax",
+    https_only=False,
+)
+
 # CORS: cho phép trang FE (khác cổng/khác domain) gọi được API này
+origins = settings.cors_origin_list
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origin_list,
+    allow_origins=origins if "*" not in origins else ["*"],
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$" if "*" in origins else None,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -109,8 +131,10 @@ app.include_router(posts.router)
 app.include_router(games.router)
 app.include_router(user_games.router)
 app.include_router(admin_games.router)
-app.include_router(team_join.router)
+app.include_router(team_join.router, prefix="/api")
 app.add_middleware(AuthMiddleware)
+app.include_router(team.router, prefix="/api")
+
 
 @app.get("/")
 def root():
