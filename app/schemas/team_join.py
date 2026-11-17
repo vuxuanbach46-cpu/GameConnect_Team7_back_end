@@ -22,3 +22,10 @@ class MyJoinRequestResponse(BaseModel):
     created_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+from app.schemas.team import (
+    JoinRequestStatusAction,
+    ReviewJoinRequest,
+    TransferCaptainRequest,
+)
