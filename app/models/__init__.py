@@ -20,4 +20,5 @@ from app.models.post_like import PostLike  # noqa: F401
 from app.models.notification import Notification  # noqa: F401
 from app.models.matchmaking import MatchRoom, MatchRoomMember, MatchQueue  # noqa: F401
 from app.models.revoked_token import RevokedToken  # noqa: F401
+from app.models.password_reset_token import PasswordResetToken  # noqa: F401
 from app.models.matchmaking import MatchRoom, MatchRoomMember, MatchQueue  # noqa: F401
