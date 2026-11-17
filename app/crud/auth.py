@@ -9,6 +9,12 @@ from app.core.security import (
     create_refresh_token,
 )
 from sqlalchemy.exc import IntegrityError
+from datetime import datetime, timedelta
+import secrets
+import logging
+from app.models.password_reset_token import PasswordResetToken
+
+logger = logging.getLogger(__name__)
 
 
 def create_register_service(info: UserRegisterRequest, db: Session):
@@ -104,3 +110,43 @@ def login_service(info: UserLoginRequest, db: Session):
         "refresh_token": refresh_token,
         "role": user_role,
     }
+
+
+def change_password_service(user: User, old_password: str, new_password: str, db: Session):
+    if not user.password_hash or not verify_password(old_password, user.password_hash):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Mật khẩu cũ không chính xác")
+    if old_password == new_password:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Mật khẩu mới phải khác mật khẩu cũ")
+
+    try:
+        user.password_hash = hash_password(new_password)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+
+def request_password_reset_service(email: str, db: Session, log_code: bool = False):
+    """Issue a short lived reset code, without revealing whether the account exists."""
+    try:
+        user = db.query(User).filter(User.email == email.strip().lower()).first()
+        if user:
+            now = datetime.utcnow()
+            (db.query(PasswordResetToken)
+             .filter(PasswordResetToken.user_id == user.id,
+                     PasswordResetToken.used_at.is_(None),
+                     PasswordResetToken.invalidated_at.is_(None))
+             .update({PasswordResetToken.invalidated_at: now}, synchronize_session=False))
+            code = f"{secrets.randbelow(1_000_000):06d}"
+            db.add(PasswordResetToken(
+                user_id=user.id,
+                token_hash=hash_password(code),
+                expires_at=now + timedelta(minutes=15),
+            ))
+            db.flush()
+            if log_code:
+                logger.info("Development password reset code for %s: %s", email, code)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise

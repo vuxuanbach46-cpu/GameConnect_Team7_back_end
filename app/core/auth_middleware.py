@@ -41,6 +41,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             for p in (
                 "/auth/login",
                 "/auth/register",
+                "/auth/forgot-password",
                 "/auth/refresh",
                 "/auth/logout",
                 "/auth/google/login",

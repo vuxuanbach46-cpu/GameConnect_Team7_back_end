@@ -27,13 +27,78 @@ from fastapi import HTTPException
 from app.core.config import settings
 from datetime import datetime, timezone
 from app.schemas.auth import LogoutRequest
+from app.schemas.auth import ChangePasswordRequest, ForgotPasswordRequest
+from app.core.security import get_current_user
+from app.crud.auth import change_password_service, request_password_reset_service
 from app.core.google_oauth import oauth
 from app.core.security import oauth2_schema
-from app.core.security import google_login_service
+from app.core.security import google_login_service , create_access_token, create_refresh_token
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["AUTH"])
+
+
+@router.put("/change-password", summary="Đổi mật khẩu")
+def change_password(
+    request: Request,
+    info: ChangePasswordRequest,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        change_password_service(current_user, info.old_password, info.new_password, db)
+        return api_repoint(
+            req=request,
+            status_code=status.HTTP_200_OK,
+            message="Đổi mật khẩu thành công",
+            data=None,
+        )
+    except HTTPException as error:
+        db.rollback()
+        return api_repoint(
+            req=request,
+            status_code=error.status_code,
+            message="Đổi mật khẩu thất bại",
+            error=error.detail,
+        )
+    except Exception:
+        db.rollback()
+        logger.exception("Password change failed")
+        return api_repoint(
+            req=request,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Đổi mật khẩu thất bại",
+            error="Không thể cập nhật mật khẩu",
+        )
+
+
+@router.post("/forgot-password", summary="Yêu cầu đặt lại mật khẩu")
+@limiter.limit("3/hour")
+def forgot_password(
+    request: Request,
+    info: ForgotPasswordRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        request_password_reset_service(
+            info.email, db, log_code=settings.ENVIRONMENT.strip().lower() == "development"
+        )
+        return api_repoint(
+            req=request,
+            status_code=status.HTTP_200_OK,
+            message="Nếu email tồn tại, hướng dẫn đặt lại mật khẩu sẽ được gửi.",
+            data=None,
+        )
+    except Exception:
+        db.rollback()
+        logger.exception("Password reset request failed")
+        return api_repoint(
+            req=request,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Không thể xử lý yêu cầu",
+            error="Vui lòng thử lại sau",
+        )
 
 
 @router.post(
