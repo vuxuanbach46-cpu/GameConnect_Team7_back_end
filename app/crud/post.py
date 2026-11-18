@@ -1,8 +1,10 @@
-from sqlalchemy import func
+from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.models.block import Block
 from app.models.game import Game
 from app.models.comment import Comment
+from app.models.friendships import Friendship
 from app.models.post import Post
 from app.models.post_like import PostLike
 from app.models.post_game import PostGame
@@ -26,6 +28,66 @@ def get_visible_posts(db: Session, skip: int = 0, limit: int = 20) -> list[Post]
         .options(selectinload(Post.post_games))
         .filter(Post.status == "VISIBLE")
         .order_by(Post.created_at.desc(), Post.id.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+
+
+def get_feed_posts(
+    db: Session,
+    current_user_id: int,
+    game_id: int | None = None,
+    user_id: int | None = None,
+    friends_only: bool = False,
+    skip: int = 0,
+    limit: int = 20,
+) -> list[Post]:
+    query = (
+        db.query(Post)
+        .options(selectinload(Post.post_games))
+        .filter(Post.status == "VISIBLE")
+        .filter(
+            ~exists(
+                select(Block.id).where(
+                    or_(
+                        and_(
+                            Block.blocker_id == current_user_id,
+                            Block.blocked_id == Post.user_id,
+                        ),
+                        and_(
+                            Block.blocked_id == current_user_id,
+                            Block.blocker_id == Post.user_id,
+                        ),
+                    )
+                )
+            )
+        )
+    )
+    if game_id is not None:
+        query = query.filter(Post.post_games.any(PostGame.game_id == game_id))
+    if user_id is not None:
+        query = query.filter(Post.user_id == user_id)
+    if friends_only:
+        query = query.filter(
+            exists(
+                select(Friendship.id).where(
+                    or_(
+                        and_(
+                            Friendship.user_a == current_user_id,
+                            Friendship.user_b == Post.user_id,
+                        ),
+                        and_(
+                            Friendship.user_b == current_user_id,
+                            Friendship.user_a == Post.user_id,
+                        ),
+                    )
+                )
+            )
+        )
+
+    return (
+        query.order_by(Post.created_at.desc(), Post.id.desc())
         .offset(skip)
         .limit(limit)
         .all()
