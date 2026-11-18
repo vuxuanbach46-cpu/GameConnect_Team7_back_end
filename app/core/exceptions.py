@@ -42,7 +42,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     ):
         return _create_error_response(
             req=request,
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             message="Failed",
             error=exc.errors(),
         )

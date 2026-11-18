@@ -4,12 +4,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class CommentCreate(BaseModel):
-    content: str = Field(min_length=1)
-    parent_comment_id: int | None = None
+    content: str = Field(min_length=1, max_length=2000)
+    parent_comment_id: int | None = Field(default=None, ge=1)
 
 
 class CommentUpdate(BaseModel):
-    content: str = Field(min_length=1)
+    content: str = Field(min_length=1, max_length=2000)
 
 
 class CommentOut(BaseModel):

@@ -1,8 +1,10 @@
-from sqlalchemy import func
+from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.models.block import Block
 from app.models.game import Game
 from app.models.comment import Comment
+from app.models.friendships import Friendship
 from app.models.post import Post
 from app.models.post_like import PostLike
 from app.models.post_game import PostGame
@@ -32,6 +34,66 @@ def get_visible_posts(db: Session, skip: int = 0, limit: int = 20) -> list[Post]
     )
 
 
+def get_feed_posts(
+    db: Session,
+    current_user_id: int,
+    game_id: int | None = None,
+    user_id: int | None = None,
+    friends_only: bool = False,
+    skip: int = 0,
+    limit: int = 20,
+) -> list[Post]:
+    query = (
+        db.query(Post)
+        .options(selectinload(Post.post_games))
+        .filter(Post.status == "VISIBLE")
+        .filter(
+            ~exists(
+                select(Block.id).where(
+                    or_(
+                        and_(
+                            Block.blocker_id == current_user_id,
+                            Block.blocked_id == Post.user_id,
+                        ),
+                        and_(
+                            Block.blocked_id == current_user_id,
+                            Block.blocker_id == Post.user_id,
+                        ),
+                    )
+                )
+            )
+        )
+    )
+    if game_id is not None:
+        query = query.filter(Post.post_games.any(PostGame.game_id == game_id))
+    if user_id is not None:
+        query = query.filter(Post.user_id == user_id)
+    if friends_only:
+        query = query.filter(
+            exists(
+                select(Friendship.id).where(
+                    or_(
+                        and_(
+                            Friendship.user_a == current_user_id,
+                            Friendship.user_b == Post.user_id,
+                        ),
+                        and_(
+                            Friendship.user_b == current_user_id,
+                            Friendship.user_a == Post.user_id,
+                        ),
+                    )
+                )
+            )
+        )
+
+    return (
+        query.order_by(Post.created_at.desc(), Post.id.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+
+
 def get_post(db: Session, post_id: int) -> Post | None:
     return (
         db.query(Post)
@@ -53,8 +115,6 @@ def _set_games(db: Session, post: Post, game_ids: list[int]) -> None:
 
 
 def create_post(db: Session, data: PostCreate, user_id: int) -> Post:
-    if data.image_urls and data.image_url:
-        raise ValueError("Chỉ được truyền image_url hoặc image_urls")
     image_urls = data.image_urls or ([data.image_url] if data.image_url else [])
     post = Post(
         user_id=user_id,
@@ -84,9 +144,11 @@ def update_post(db: Session, post: Post, data: PostUpdate) -> Post:
     image_url_was_set = "image_url" in updates
     image_url = updates.pop("image_url", None)
 
-    if image_urls is not None and image_url_was_set:
-        raise ValueError("Chỉ được truyền image_url hoặc image_urls")
     if image_urls is not None:
+        if image_url and image_url not in image_urls:
+            image_urls = [image_url, *image_urls]
+        if len(image_urls) > 4:
+            raise ValueError("Chỉ được đính kèm tối đa 4 ảnh")
         updates["image_urls"] = image_urls
         updates["image_url"] = image_urls[0] if image_urls else None
     elif image_url_was_set:

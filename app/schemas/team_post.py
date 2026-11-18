@@ -1,6 +1,6 @@
 """Pydantic schemas cho TeamPost, TeamPostRole, TeamPostApplication.
 
-Khớp với schema DBML GameConnect (task T3CCC1C).
+Khớp chuẩn schema GameConnect (task T3CCC1C).
 """
 from datetime import datetime
 
@@ -18,26 +18,27 @@ class TeamPostBase(BaseModel):
     title: str = Field(min_length=1, max_length=150, examples=["[VN] Tìm Jungle + Support leo Plat"])
     min_rank_id: int | None = Field(default=None, examples=[3], description="ID rank tối thiểu (FK → game_ranks.id)")
     max_rank_id: int | None = Field(default=None, examples=[6], description="ID rank tối đa (FK → game_ranks.id)")
-    needed_players: int = Field(default=1, ge=1, le=50, examples=[2])
+    needed_players: int = Field(default=1, ge=1, le=50, examples=[2], description="Số người cần tuyển (1–50 người)")
     play_time: str | None = Field(default=None, max_length=100, examples=["20:00-23:00"])
     region: str | None = Field(default=None, max_length=100, examples=["VN"])
     description: str | None = Field(default=None, examples=["Mic on bắt buộc, không toxic."])
-    expires_at: datetime | None = Field(default=None, examples=["2026-11-30T23:59:59"])
+    expires_at: datetime | None = Field(default=None, examples=["2026-11-17T23:59:59"], description="Hạn hiển thị tối đa 7 ngày")
 
 
 class TeamPostCreate(TeamPostBase):
-    """Dữ liệu FE gửi lên khi TẠO bài đăng."""
+    """Dữ liệu gửi lên khi TẠO bài đăng tìm đội."""
     user_id: int | None = Field(
         default=None,
         description="Được lấy từ tài khoản đã đăng nhập, không lấy từ request.",
     )
     role_ids: list[int] = Field(
-        default=[], examples=[[2, 4]], description="Danh sách game_role_id cần tuyển"
+        default=[], examples=[[2, 4]], description="Danh sách game_role_id vai trò cần tuyển"
     )
 
 
 class TeamPostUpdate(BaseModel):
-    """Dữ liệu FE gửi lên khi CẬP NHẬT (trường nào không gửi thì giữ nguyên)."""
+    """Dữ liệu gửi lên khi CẬP NHẬT bài đăng."""
+    user_id: int | None = Field(default=None, description="ID người gửi yêu cầu (nếu không dùng token)")
     title: str | None = Field(default=None, min_length=1, max_length=150)
     min_rank_id: int | None = None
     max_rank_id: int | None = None
@@ -47,11 +48,11 @@ class TeamPostUpdate(BaseModel):
     description: str | None = None
     status: PostStatus | None = None
     expires_at: datetime | None = None
-    role_ids: list[int] | None = Field(default=None, description="Ghi đè toàn bộ danh sách vai trò")
+    role_ids: list[int] | None = Field(default=None, description="Ghi đè danh sách vai trò")
 
 
 class TeamPostOut(TeamPostBase):
-    """Dữ liệu API trả về (không kèm đơn ứng tuyển)."""
+    """Dữ liệu API trả về."""
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -59,6 +60,16 @@ class TeamPostOut(TeamPostBase):
     status: PostStatus
     created_at: datetime
     updated_at: datetime
+    role_ids: list[int] = []
+
+
+class TeamPostPaginationOut(BaseModel):
+    """Kết quả phân trang danh sách bài đăng."""
+    items: list[TeamPostOut]
+    total: int = Field(ge=0, description="Tổng số bài tìm thấy")
+    page: int = Field(ge=1, description="Trang hiện tại")
+    page_size: int = Field(ge=1, description="Số bài mỗi trang")
+    total_pages: int = Field(ge=0, description="Tổng số trang")
 
 
 # ---------------------------------------------------------------------------
@@ -72,7 +83,7 @@ class TeamPostApplicationBase(BaseModel):
 
 
 class TeamPostApplicationCreate(TeamPostApplicationBase):
-    """Dữ liệu FE gửi lên khi NỘP đơn ứng tuyển."""
+    """Dữ liệu gửi lên khi NỘP đơn ứng tuyển."""
     user_id: int | None = Field(
         default=None,
         description="Được lấy từ tài khoản đã đăng nhập, không lấy từ request.",
@@ -85,7 +96,7 @@ class TeamPostApplicationUpdate(BaseModel):
 
 
 class TeamPostApplicationOut(TeamPostApplicationBase):
-    """Dữ liệu API trả về."""
+    """Dữ liệu đơn ứng tuyển trả về."""
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -97,5 +108,5 @@ class TeamPostApplicationOut(TeamPostApplicationBase):
 
 
 class TeamPostDetailOut(TeamPostOut):
-    """Bài đăng + danh sách đơn ứng tuyển (endpoint chi tiết)."""
+    """Chi tiết bài đăng kèm danh sách đơn ứng tuyển."""
     applications: list[TeamPostApplicationOut] = []

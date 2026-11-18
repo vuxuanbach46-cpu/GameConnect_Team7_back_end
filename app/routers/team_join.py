@@ -3,17 +3,29 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Path, Request
 from sqlalchemy.orm import Session
 
-from app.core.security import get_current_user
-from app.crud import team_join as crud
 from app.db.session import get_db
-from app.schemas.api_response import api_repoint
-from app.schemas.team_join import JoinTeamRequest
+from app.core.security import get_current_user
 
-router = APIRouter(prefix="/teams", tags=["Team Join"])
+from app.crud import team_join as crud
+
+from app.schemas.team_join import (
+    JoinTeamRequest,
+)
+
+from app.schemas.api_response import api_repoint
+
+router = APIRouter(
+    prefix="/teams",
+    tags=["Team Join"],
+)
 
 
 # Gửi yêu cầu hoặc tham gia đội
-@router.post("/{team_id}/join")
+@router.post(
+    "/{team_id}/join",
+    summary="Gửi yêu cầu tham gia đội hoặc tham gia trực tiếp nếu đội cho phép",
+    description="Gửi yêu cầu tham gia đội hoặc tham gia trực tiếp nếu đội cho phép. Nếu đội ở chế độ 'OPEN', người dùng sẽ được thêm vào đội ngay lập tức. Nếu đội ở chế độ 'REQUEST', người dùng sẽ gửi yêu cầu tham gia và chờ quản lý đội chấp nhận.",
+)
 def join_team(
     team_id: Annotated[int, Path(ge=1)],
     req: Request,
@@ -40,7 +52,11 @@ def join_team(
 
 
 # Hủy yêu cầu tham gia
-@router.delete("/{team_id}/join-request")
+@router.delete(
+    "/{team_id}/join-request",
+    summary="Hủy yêu cầu tham gia đội",
+    description="Hủy yêu cầu tham gia đội đang chờ xử lý.",
+)
 def cancel_join_request(
     team_id: Annotated[int, Path(ge=1)],
     req: Request,
@@ -64,7 +80,11 @@ def cancel_join_request(
 
 
 # Xem trạng thái yêu cầu tham gia
-@router.get("/{team_id}/join-request/me")
+@router.get(
+    "/{team_id}/join-request/me",
+    summary="Xem trạng thái yêu cầu tham gia đội",
+    description="Xem trạng thái yêu cầu tham gia đội đang chờ xử lý.",
+)
 def get_my_join_request(
     team_id: Annotated[int, Path(ge=1)],
     req: Request,

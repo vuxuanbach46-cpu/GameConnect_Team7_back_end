@@ -1,13 +1,18 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.security import get_admin_user, get_current_user, get_optional_user
+from app.crud import comment as comment_crud
 from app.crud import post as post_crud
+from app.crud import post_like as post_like_crud
 from app.db.session import get_db
+from app.models.comment import Comment
 from app.models.post import Post
 from app.models.user import User
 from app.schemas.api_response import api_repoint
+from app.schemas.comment import CommentCreate, CommentOut, CommentUpdate
 from app.schemas.post import PostCreate, PostOut, PostUpdate
+from app.schemas.post_like import PostLikeOut
 
 router = APIRouter(prefix="/posts", tags=["Posts"])
 
@@ -52,6 +57,16 @@ def _require_author_or_admin(post: Post, current_user: User) -> None:
         get_admin_user(current_user)
 
 
+def _comment_or_404(db: Session, post_id: int, comment_id: int) -> Comment:
+    comment = comment_crud.get_comment(db, comment_id)
+    if comment is None or comment.post_id != post_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Không tìm thấy bình luận",
+        )
+    return comment
+
+
 @router.post("", status_code=status.HTTP_201_CREATED, summary="Tạo bài viết")
 def create_post(
     req: Request,
@@ -63,7 +78,7 @@ def create_post(
         post = post_crud.create_post(db, data, current_user.id)
     except ValueError as error:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
         ) from error
     result = _post_response(post, 0, 0)
     return api_repoint(
@@ -77,12 +92,23 @@ def create_post(
 @router.get("", summary="Danh sách bài viết")
 def list_posts(
     req: Request,
+    game_id: int | None = Query(default=None, ge=1),
+    user_id: int | None = Query(default=None, ge=1, description="Lọc bài viết của người dùng"),
+    friends_only: bool = Query(default=False, description="Chỉ lấy bài viết của bạn bè"),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: User | None = Depends(get_optional_user),
 ):
-    posts = post_crud.get_visible_posts(db, skip=skip, limit=limit)
+    posts = post_crud.get_feed_posts(
+        db,
+        current_user_id=current_user.id,
+        game_id=game_id,
+        user_id=user_id,
+        friends_only=friends_only,
+        skip=skip,
+        limit=limit,
+    )
     counts = post_crud.get_post_counts_by_id(db, [post.id for post in posts])
     results = [
         _post_response(post, *counts[post.id]).model_dump(mode="json")
@@ -132,7 +158,7 @@ def update_post(
         post = post_crud.update_post(db, post, data)
     except ValueError as error:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
         ) from error
     like_count, comment_count = post_crud.get_post_counts(db, post_id)
     result = _post_response(post, like_count, comment_count)
@@ -163,4 +189,147 @@ def remove_post(
         status_code=status.HTTP_200_OK,
         message="Xóa bài viết thành công",
         data={"id": post_id},
+    )
+
+
+@router.get("/{post_id}/comments", summary="Danh sách bình luận")
+def list_comments(
+    req: Request,
+    post_id: int,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    _post_or_404(db, post_id)
+    comments = comment_crud.get_comments(db, post_id, skip=skip, limit=limit)
+    return api_repoint(
+        req=req,
+        status_code=status.HTTP_200_OK,
+        message="Lấy danh sách bình luận thành công",
+        data=[
+            CommentOut.model_validate(comment).model_dump(mode="json")
+            for comment in comments
+        ],
+    )
+
+
+@router.post(
+    "/{post_id}/comments",
+    status_code=status.HTTP_201_CREATED,
+    summary="Thêm bình luận hoặc trả lời",
+)
+def create_comment(
+    req: Request,
+    post_id: int,
+    data: CommentCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    post = _post_or_404(db, post_id)
+    try:
+        comment = comment_crud.create_comment(db, post, current_user.id, data)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
+        ) from error
+    return api_repoint(
+        req=req,
+        status_code=status.HTTP_201_CREATED,
+        message="Thêm bình luận thành công",
+        data=CommentOut.model_validate(comment).model_dump(mode="json"),
+    )
+
+
+@router.put(
+    "/{post_id}/comments/{comment_id}", summary="Cập nhật bình luận"
+)
+def edit_comment(
+    req: Request,
+    post_id: int,
+    comment_id: int,
+    data: CommentUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _post_or_404(db, post_id)
+    comment = _comment_or_404(db, post_id, comment_id)
+    if comment.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Chỉ người tạo bình luận mới được sửa",
+        )
+    comment = comment_crud.update_comment(db, comment, data)
+    return api_repoint(
+        req=req,
+        status_code=status.HTTP_200_OK,
+        message="Cập nhật bình luận thành công",
+        data=CommentOut.model_validate(comment).model_dump(mode="json"),
+    )
+
+
+@router.delete(
+    "/{post_id}/comments/{comment_id}", summary="Xóa bình luận"
+)
+def remove_comment(
+    req: Request,
+    post_id: int,
+    comment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _post_or_404(db, post_id)
+    comment = _comment_or_404(db, post_id, comment_id)
+    if comment.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Chỉ người tạo bình luận mới được xóa",
+        )
+    comment_crud.delete_comment(db, comment)
+    return api_repoint(
+        req=req,
+        status_code=status.HTTP_200_OK,
+        message="Xóa bình luận thành công",
+        data={"id": comment_id},
+    )
+
+
+@router.post("/{post_id}/like", summary="Thích bài viết")
+def like_post(
+    req: Request,
+    response: Response,
+    post_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    post = _post_or_404(db, post_id)
+    like, created = post_like_crud.create_post_like(db, post, current_user.id)
+    response_status = (
+        status.HTTP_201_CREATED if created else status.HTTP_200_OK
+    )
+    response.status_code = response_status
+    return api_repoint(
+        req=req,
+        status_code=response_status,
+        message="Thích bài viết thành công",
+        data={
+            "liked": True,
+            "like": PostLikeOut.model_validate(like).model_dump(mode="json"),
+        },
+    )
+
+
+@router.delete("/{post_id}/like", summary="Bỏ thích bài viết")
+def unlike_post(
+    req: Request,
+    post_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _post_or_404(db, post_id)
+    post_like_crud.delete_post_like(db, post_id, current_user.id)
+    return api_repoint(
+        req=req,
+        status_code=status.HTTP_200_OK,
+        message="Bỏ thích bài viết thành công",
+        data={"liked": False},
     )
