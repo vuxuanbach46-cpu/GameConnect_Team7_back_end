@@ -33,5 +33,6 @@ class GameRole(Base):
 
     user_games = relationship(
         "UserGame",
-        back_populates="role"
+        back_populates="role",
+        passive_deletes=True,
     )

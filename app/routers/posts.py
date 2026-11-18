@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
-from app.core.security import get_current_user
+from app.core.security import get_admin_user, get_current_user, get_optional_user
 from app.crud import post as post_crud
 from app.db.session import get_db
 from app.models.post import Post
@@ -43,8 +43,13 @@ def _require_author(post: Post, current_user: User) -> None:
     if post.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Chỉ tác giả mới được sửa hoặc xóa bài viết",
+            detail="Chỉ tác giả mới được sửa bài viết",
         )
+
+
+def _require_author_or_admin(post: Post, current_user: User) -> None:
+    if post.user_id != current_user.id:
+        get_admin_user(current_user)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, summary="Tạo bài viết")
@@ -58,7 +63,7 @@ def create_post(
         post = post_crud.create_post(db, data, current_user.id)
     except ValueError as error:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
         ) from error
     result = _post_response(post, 0, 0)
     return api_repoint(
@@ -78,7 +83,7 @@ def list_posts(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User | None = Depends(get_optional_user),
 ):
     posts = post_crud.get_feed_posts(
         db,
@@ -103,7 +108,12 @@ def list_posts(
 
 
 @router.get("/{post_id}", summary="Chi tiết bài viết")
-def read_post(req: Request, post_id: int, db: Session = Depends(get_db)):
+def read_post(
+    req: Request,
+    post_id: int,
+    db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_user),
+):
     post = _post_or_404(db, post_id)
     like_count, comment_count = post_crud.get_post_counts(db, post_id)
     result = _post_response(post, like_count, comment_count)
@@ -133,7 +143,7 @@ def update_post(
         post = post_crud.update_post(db, post, data)
     except ValueError as error:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
         ) from error
     like_count, comment_count = post_crud.get_post_counts(db, post_id)
     result = _post_response(post, like_count, comment_count)
@@ -157,7 +167,7 @@ def remove_post(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài viết"
         )
-    _require_author(post, current_user)
+    _require_author_or_admin(post, current_user)
     post_crud.delete_post(db, post)
     return api_repoint(
         req=req,

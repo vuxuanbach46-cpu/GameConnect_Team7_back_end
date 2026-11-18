@@ -115,8 +115,6 @@ def _set_games(db: Session, post: Post, game_ids: list[int]) -> None:
 
 
 def create_post(db: Session, data: PostCreate, user_id: int) -> Post:
-    if data.image_urls and data.image_url:
-        raise ValueError("Chỉ được truyền image_url hoặc image_urls")
     image_urls = data.image_urls or ([data.image_url] if data.image_url else [])
     post = Post(
         user_id=user_id,
@@ -146,9 +144,11 @@ def update_post(db: Session, post: Post, data: PostUpdate) -> Post:
     image_url_was_set = "image_url" in updates
     image_url = updates.pop("image_url", None)
 
-    if image_urls is not None and image_url_was_set:
-        raise ValueError("Chỉ được truyền image_url hoặc image_urls")
     if image_urls is not None:
+        if image_url and image_url not in image_urls:
+            image_urls = [image_url, *image_urls]
+        if len(image_urls) > 4:
+            raise ValueError("Chỉ được đính kèm tối đa 4 ảnh")
         updates["image_urls"] = image_urls
         updates["image_url"] = image_urls[0] if image_urls else None
     elif image_url_was_set:
