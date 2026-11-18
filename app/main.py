@@ -117,3 +117,4 @@ app.add_middleware(AuthMiddleware)
 @app.get("/")
 def root():
     return {"message": f"{settings.APP_NAME} đang chạy. Xem tài liệu API tại /docs"}
+app.include_router(reports.public_router)
