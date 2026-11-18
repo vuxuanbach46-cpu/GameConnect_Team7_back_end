@@ -1,5 +1,5 @@
 import logging
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 from authlib.integrations.base_client.errors import OAuthError
 from fastapi import APIRouter, Depends, Request, status, Header
@@ -319,7 +319,10 @@ def logout(
 
 
 @router.get("/google/login")
-async def google_login(request: Request):
+async def google_login(
+    request: Request,
+    redirect_to: str | None = None,
+):
     redirect_uri = settings.GOOGLE_REDIRECT_URI
     callback_url = urlsplit(redirect_uri)
     if not callback_url.scheme or not callback_url.netloc:
@@ -333,11 +336,26 @@ async def google_login(request: Request):
         or request.url.netloc != callback_url.netloc
     ):
         canonical_login_url = urlunsplit(
-            (callback_url.scheme, callback_url.netloc, request.url.path, "", "")
+            (callback_url.scheme, callback_url.netloc, request.url.path, request.url.query, "")
         )
         return RedirectResponse(url=canonical_login_url)
 
-    return await oauth.google.authorize_redirect(request, redirect_uri)
+    # Xác định đúng URL trang home.html của Frontend từ redirect_to hoặc Referer header
+    target_home = None
+    if redirect_to and redirect_to.startswith(("http://", "https://")):
+        target_home = redirect_to
+    else:
+        referer = request.headers.get("referer")
+        if referer and referer.startswith(("http://", "https://")):
+            target_home = urljoin(referer, "home.html")
+
+    request.session["frontend_redirect_to"] = target_home or settings.FRONTEND_HOME_URL
+
+    return await oauth.google.authorize_redirect(
+        request,
+        redirect_uri,
+        prompt="select_account",
+    )
 
 
 @router.get("/google/callback")
@@ -375,10 +393,12 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
             else getattr(result, "refresh_token", "")
         )
 
-        # Tạo URL chuyển hướng thẳng về trang chủ Frontend kèm token trên query string
+        # Tạo URL chuyển hướng thẳng về trang chủ Frontend (home.html) kèm token trên query string
+        target_home = request.session.pop("frontend_redirect_to", None) or settings.FRONTEND_HOME_URL
+        separator = "&" if "?" in target_home else "?"
         frontend_url = (
-            f"http://127.0.0.1:5500/pages/home.html"
-            f"?access_token={access_token}&refresh_token={refresh_token}"
+            f"{target_home}{separator}"
+            f"access_token={access_token}&refresh_token={refresh_token}"
         )
 
         return RedirectResponse(url=frontend_url, status_code=status.HTTP_302_FOUND)

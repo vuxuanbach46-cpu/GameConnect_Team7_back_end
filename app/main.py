@@ -21,12 +21,9 @@ from app.routers import auth, gamer_profile, notifications, posts, team_post, us
 from app.routers import games, user_games, admin_games
 from app.routers import matchmaking
 from app.core.auth_middleware import AuthMiddleware
-from app.routers import team_join
 from app.routers import reports
-
-from app.routers import auth, gamer_profile, notifications, posts, team_post, users
 from app.routers import friend_request
-from app.routers import team_join , team
+from app.routers import team_join, team
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -71,6 +68,16 @@ async def lifespan(app: FastAPI):
                     )
                     print("[DB] Added match_rooms.label column.")
 
+            if "gamer_profiles" in table_names_set:
+                gp_cols = {
+                    column["name"] for column in inspect(connection).get_columns("gamer_profiles")
+                }
+                if "is_public" not in gp_cols:
+                    connection.execute(
+                        text("ALTER TABLE gamer_profiles ADD COLUMN is_public BOOLEAN NOT NULL DEFAULT FALSE")
+                    )
+                    print("[DB] Added gamer_profiles.is_public column.")
+
             if "users" in table_names_set:
                 user_cols = {
                     column["name"]
@@ -86,6 +93,9 @@ async def lifespan(app: FastAPI):
                         text("ALTER TABLE users ADD COLUMN auth_provider ENUM('LOCAL', 'GOOGLE') NOT NULL DEFAULT 'LOCAL'")
                     )
                     print("[DB] Added users.auth_provider column.")
+                connection.execute(
+                    text("ALTER TABLE users MODIFY COLUMN password_hash VARCHAR(255) NULL")
+                )
 
         table_names = ", ".join(table.name for table in tables)
         print(f"[DB] Checked/created {len(tables)} tables: {table_names}")
