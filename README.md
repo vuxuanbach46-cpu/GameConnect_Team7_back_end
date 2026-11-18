@@ -126,6 +126,15 @@ Kiểm tra:
 
 Khi lỗi, API trả về JSON dạng `{"detail": "..."}`. Ví dụ: 404 khi không tìm thấy, 422 khi dữ liệu gửi lên sai.
 
+### API xác thực
+
+| Method | URL | Nội dung | Body (JSON) |
+|---|---|---|---|
+| POST | `/auth/register` | Đăng ký tài khoản | `{"email":"player@example.com","password":"secret123","full_name":"Player One"}` |
+| POST | `/auth/login` | Đăng nhập | `{"email":"player@example.com","password":"secret123"}` |
+
+`full_name` được lưu làm username. Nếu username đã tồn tại, API trả lỗi 422 với thông báo `Username đã tồn tại`.
+
 ### API bài viết
 
 Các endpoint bài viết dùng đường dẫn `/posts`. Bảng tin và các thao tác tạo, sửa, xóa yêu cầu access token Bearer; chỉ tác giả đăng nhập mới được sửa hoặc xóa.
@@ -141,6 +150,19 @@ Các endpoint bài viết dùng đường dẫn `/posts`. Bảng tin và các th
 Nội dung dài 1–2000 ký tự. Ảnh truyền bằng `image_urls` (tối đa 4 URL, mỗi URL tối đa 500 ký tự); `image_url` đơn vẫn được hỗ trợ để tương thích. Response có `like_count`, `comment_count`, `game_ids`, trạng thái và thời gian tạo/sửa. Với database đã có bảng `posts`, chạy `sql/posts_add_image_urls.sql` một lần để thêm cột ảnh mới.
 
 Bảng tin phân trang bằng `skip`/`limit` (giới hạn `limit` tối đa 100) và hỗ trợ lọc tùy chọn `game_id`, `user_id`, `friends_only=true`. Chỉ bài `VISIBLE` được trả về; bài của người dùng có quan hệ chặn với tài khoản hiện tại cũng bị ẩn.
+
+### Bình luận và lượt thích
+
+| Method | URL | Nội dung |
+|---|---|---|
+| GET | `/posts/{post_id}/comments?skip=0&limit=20` | Danh sách bình luận, gồm cả trả lời (phân trang) |
+| POST | `/posts/{post_id}/comments` | Thêm bình luận hoặc trả lời |
+| PUT | `/posts/{post_id}/comments/{comment_id}` | Sửa bình luận của mình |
+| DELETE | `/posts/{post_id}/comments/{comment_id}` | Xóa bình luận của mình |
+| POST | `/posts/{post_id}/like` | Thích bài viết (gọi lặp không tạo lượt thích trùng) |
+| DELETE | `/posts/{post_id}/like` | Bỏ thích bài viết |
+
+Các thao tác ghi yêu cầu access token Bearer. Nội dung bình luận dài 1–2000 ký tự; trả lời chỉ được tạo ở cấp đầu tiên. Tác giả bài viết nhận thông báo khi người khác bình luận, trả lời hoặc thích bài viết; tương tác của chính tác giả không tạo thông báo.
 
 ## 8. Frontend nối với backend thế nào?
 
