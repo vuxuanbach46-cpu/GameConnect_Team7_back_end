@@ -5,6 +5,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Index,
+    UniqueConstraint,
     String,
     Text,
     text,
@@ -45,4 +46,5 @@ class Report(Base):
     __table_args__ = (
         Index("idx_reports_status_created", "status", "created_at"),
         Index("idx_reports_target", "target_type", "target_id"),
+        UniqueConstraint("reporter_id", "target_type", "target_id", name="uq_reports_reporter_target"),
     )
