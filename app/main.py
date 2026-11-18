@@ -28,8 +28,6 @@ from app.routers import auth, gamer_profile, notifications, posts, team_post, us
 from app.routers import friend_request
 from app.routers import team_join , team
 
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
