@@ -121,32 +121,31 @@ app.add_middleware(
     https_only=False,
 )
 
+# Middleware xác thực user
+app.add_middleware(AuthMiddleware)
+
 # CORS: cho phép trang FE (khác cổng/khác domain) gọi được API này
-origins = settings.cors_origin_list
+origins = list(settings.cors_origin_list)
+default_origins = [
+    "http://127.0.0.1:5500",
+    "http://localhost:5500",
+    "http://127.0.0.1:8000",
+    "http://localhost:8000",
+    "http://127.0.0.1:3000",
+    "http://localhost:3000",
+]
+for d in default_origins:
+    if d not in origins:
+        origins.append(d)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins if "*" not in origins else ["*"],
-    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$" if "*" in origins else None,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-app.include_router(auth.router)
-app.include_router(users.router)
-app.include_router(gamer_profile.router)
-app.include_router(friend_request.router)
-app.include_router(notifications.router)
-app.include_router(team_post.router, prefix="/api")
-app.include_router(matchmaking.router, prefix="/api")
-app.include_router(posts.router)
-app.include_router(games.router)
-app.include_router(user_games.router)
-app.include_router(admin_games.router)
-app.include_router(team_join.router)
-app.include_router(reports.router)
-app.include_router(team_join.router, prefix="/api")
-app.add_middleware(AuthMiddleware)
 app.include_router(team.router, prefix="/api")
 
 

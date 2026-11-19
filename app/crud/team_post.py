@@ -17,8 +17,7 @@ from sqlalchemy.orm import Session
 from app.models.game import Game
 from app.models.game_rank import GameRank
 from app.models.game_role import GameRole
-from app.models.notification import Notification
-from app.models.user import User
+from app.models.user_game import UserGame
 from app.models.team_post import (
     ApplicationStatus,
     PostStatus,
@@ -145,6 +144,116 @@ def get_team_posts(
     items = list(db.scalars(query.offset(offset).limit(page_size)).unique())
 
     return items, total
+
+
+def get_recommended_team_posts(
+    db: Session,
+    user_id: int | None = None,
+    limit: int = 6,
+) -> tuple[list[TeamPost], bool, list[str]]:
+    """Gợi ý bài đăng tìm đội phù hợp theo game và rank trong hồ sơ người chơi (T3CCE98).
+
+    Quy tắc nghiệp vụ:
+    1. Lấy danh sách game và rank trong hồ sơ của người dùng (user_games).
+    2. Nếu người dùng có cấu hình game trong hồ sơ:
+       - Với mỗi game/rank của user:
+         + game_id khớp với game của bài đăng (TeamPost.game_id == ug.game_id).
+         + Rank của user phải nằm trong khoảng [min_rank, max_rank] của bài:
+           * min_rank_id IS NULL hoặc min_rank.rank_order <= user_rank.rank_order
+           * max_rank_id IS NULL hoặc max_rank.rank_order >= user_rank.rank_order
+         + Nếu bài đăng không yêu cầu rank (min & max đều NULL) thì phù hợp mọi rank.
+       - Bài đăng phải OPEN, chưa hết hạn, và không phải do chính user đăng (TeamPost.user_id != user_id).
+       - Ưu tiên các bài đăng khớp tiêu chí, sắp xếp mới nhất (created_at DESC).
+       - Nếu số lượng bài khớp ít hơn limit, bổ sung các bài đăng OPEN khác (đang tuyển sôi nổi) để giao diện luôn đầy đặn.
+    3. Nếu người dùng chưa có game trong hồ sơ (hoặc chưa đăng nhập):
+       - Trả về danh sách bài đăng OPEN mới nhất, đánh dấu has_profile_games = False.
+    """
+    now = datetime.now()
+    user_games = []
+    if user_id:
+        user_games = db.query(UserGame).filter(UserGame.user_id == user_id).all()
+
+    has_profile_games = len(user_games) > 0
+    matched_labels: list[str] = []
+    match_conditions = []
+    game_rank_map: dict[int, str] = {}
+
+    for ug in user_games:
+        game_obj = db.get(Game, ug.game_id)
+        game_name = game_obj.name if game_obj else f"Game #{ug.game_id}"
+
+        if ug.rank_id:
+            user_rank = db.get(GameRank, ug.rank_id)
+            if user_rank:
+                label = f"{game_name} ({user_rank.rank_name})"
+                matched_labels.append(label)
+                game_rank_map[ug.game_id] = f"Rank {user_rank.rank_name}"
+
+                min_rank_subq = (
+                    select(GameRank.rank_order)
+                    .where(GameRank.id == TeamPost.min_rank_id)
+                    .scalar_subquery()
+                )
+                max_rank_subq = (
+                    select(GameRank.rank_order)
+                    .where(GameRank.id == TeamPost.max_rank_id)
+                    .scalar_subquery()
+                )
+                cond = and_(
+                    TeamPost.game_id == ug.game_id,
+                    or_(TeamPost.min_rank_id.is_(None), min_rank_subq <= user_rank.rank_order),
+                    or_(TeamPost.max_rank_id.is_(None), max_rank_subq >= user_rank.rank_order),
+                )
+                match_conditions.append(cond)
+                continue
+
+        matched_labels.append(game_name)
+        game_rank_map[ug.game_id] = "Mọi rank"
+        match_conditions.append(TeamPost.game_id == ug.game_id)
+
+    # Base filter: bài phải OPEN và chưa hết hạn
+    base_filter = [
+        TeamPost.status == PostStatus.OPEN,
+        or_(TeamPost.expires_at.is_(None), TeamPost.expires_at > now),
+    ]
+    if user_id:
+        base_filter.append(TeamPost.user_id != user_id)
+
+    recommended_posts: list[TeamPost] = []
+
+    if match_conditions:
+        matched_query = (
+            select(TeamPost)
+            .where(*base_filter, or_(*match_conditions))
+            .order_by(TeamPost.created_at.desc())
+            .limit(limit)
+        )
+        matched_list = list(db.scalars(matched_query).unique())
+        for post in matched_list:
+            reason = game_rank_map.get(post.game_id, "Khớp game hồ sơ")
+            setattr(post, "match_reason", f"Phù hợp: {reason}")
+        recommended_posts.extend(matched_list)
+
+    # Bổ sung bài nếu chưa đủ limit
+    if len(recommended_posts) < limit:
+        already_ids = [p.id for p in recommended_posts]
+        backfill_filter = list(base_filter)
+        if already_ids:
+            backfill_filter.append(~TeamPost.id.in_(already_ids))
+
+        needed = limit - len(recommended_posts)
+        backfill_query = (
+            select(TeamPost)
+            .where(*backfill_filter)
+            .order_by(TeamPost.created_at.desc())
+            .limit(needed)
+        )
+        backfill_list = list(db.scalars(backfill_query).unique())
+        for post in backfill_list:
+            setattr(post, "match_reason", "Đang tuyển sôi nổi")
+        recommended_posts.extend(backfill_list)
+
+    return recommended_posts, has_profile_games, matched_labels
 
 
 def get_team_post(db: Session, post_id: int) -> TeamPost | None:
