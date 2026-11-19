@@ -24,6 +24,7 @@ from app.core.auth_middleware import AuthMiddleware
 from app.routers import reports
 from app.routers import friend_request
 from app.routers import team_join, team
+from app.routers import admin_users
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -93,6 +94,11 @@ async def lifespan(app: FastAPI):
                         text("ALTER TABLE users ADD COLUMN auth_provider ENUM('LOCAL', 'GOOGLE') NOT NULL DEFAULT 'LOCAL'")
                     )
                     print("[DB] Added users.auth_provider column.")
+                if "locked_reason" not in user_cols:
+                    connection.execute(
+                        text("ALTER TABLE users ADD COLUMN locked_reason VARCHAR(500) NULL AFTER locked_until")
+                    )
+                    print("[DB] Added users.locked_reason column.")
                 connection.execute(
                     text("ALTER TABLE users MODIFY COLUMN password_hash VARCHAR(255) NULL")
                 )
@@ -146,6 +152,25 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Register the API routers imported above. Without these calls FastAPI starts
+# successfully, but the routes (including every /auth endpoint) return 404.
+app.include_router(auth.router)
+app.include_router(auth.api_router)
+app.include_router(users.router)
+app.include_router(gamer_profile.router)
+app.include_router(friend_request.router)
+app.include_router(notifications.router)
+app.include_router(team_post.router, prefix="/api")
+app.include_router(matchmaking.router, prefix="/api")
+app.include_router(posts.router)
+app.include_router(games.router)
+app.include_router(user_games.router)
+app.include_router(admin_games.router)
+app.include_router(team_join.router, prefix="/api")
+app.include_router(reports.public_router)
+app.include_router(reports.router)
+app.include_router(admin_users.router)
 app.include_router(team.router, prefix="/api")
 
 

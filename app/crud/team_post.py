@@ -14,6 +14,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.orm import Session
 
+from app.models.user import User
 from app.models.game import Game
 from app.models.game_rank import GameRank
 from app.models.game_role import GameRole
