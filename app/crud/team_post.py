@@ -17,6 +17,8 @@ from sqlalchemy.orm import Session
 from app.models.game import Game
 from app.models.game_rank import GameRank
 from app.models.game_role import GameRole
+from app.models.notification import Notification
+from app.models.user import User
 from app.models.team_post import (
     ApplicationStatus,
     PostStatus,
@@ -24,6 +26,7 @@ from app.models.team_post import (
     TeamPostApplication,
     TeamPostRole,
 )
+from app.crud.notification import create_notification
 from app.schemas.team_post import (
     TeamPostApplicationCreate,
     TeamPostApplicationUpdate,
@@ -446,22 +449,34 @@ def get_application(db: Session, application_id: int) -> TeamPostApplication | N
 def create_application(
     db: Session, team_post_id: int, user_id: int, data: TeamPostApplicationCreate
 ) -> TeamPostApplication:
-    # Kiểm tra bài đăng có đang OPEN không
+    # 1. Kiểm tra bài đăng tồn tại
     post = db.get(TeamPost, team_post_id)
     if not post:
         raise HTTPException(status_code=404, detail="Bài đăng không tồn tại")
+
+    # 2. Kiểm tra bài đăng có đang OPEN không
     if post.status != PostStatus.OPEN:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Bài đăng không còn mở nhận ứng tuyển",
         )
+
+    # 3. Kiểm tra bài đăng đã hết hạn chưa
+    now = datetime.now()
+    if post.expires_at and post.expires_at <= now:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Bài đăng đã hết hạn ứng tuyển",
+        )
+
+    # 4. Không ứng tuyển bài của chính mình
     if post.user_id == user_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Bạn không thể tự ứng tuyển vào bài đăng của chính mình",
         )
 
-    # Kiểm tra đã ứng tuyển trước đó chưa
+    # 5. Kiểm tra ứng tuyển trùng lặp
     existing_app = (
         db.query(TeamPostApplication)
         .filter(
@@ -471,32 +486,211 @@ def create_application(
         .first()
     )
     if existing_app:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Bạn đã gửi đơn ứng tuyển vào bài đăng này rồi",
+        if existing_app.status in (ApplicationStatus.PENDING, ApplicationStatus.ACCEPTED):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Bạn đã gửi đơn ứng tuyển vào bài đăng này rồi",
+            )
+        # Nếu trước đó đã CANCELLED hoặc REJECTED thì cho phép ứng tuyển lại (cập nhật lại PENDING)
+        existing_app.status = ApplicationStatus.PENDING
+        existing_app.message = data.message
+        app = existing_app
+    else:
+        app = TeamPostApplication(
+            team_post_id=team_post_id,
+            user_id=user_id,
+            message=data.message,
+            status=ApplicationStatus.PENDING,
         )
+        db.add(app)
 
-    app = TeamPostApplication(
-        team_post_id=team_post_id,
-        user_id=user_id,
-        message=data.message,
-        status=ApplicationStatus.PENDING,
+    # 6. Gửi thông báo đến chủ bài đăng qua module Thông báo
+    applicant_name = f"Người dùng #{user_id}"
+    user_obj = db.get(User, user_id)
+    if user_obj:
+        applicant_name = user_obj.username or f"Người dùng #{user_id}"
+
+    create_notification(
+        db=db,
+        recipient_id=post.user_id,
+        type="TEAM_POST_APPLICATION",
+        content=f"{applicant_name} đã gửi đơn ứng tuyển vào bài đăng '{post.title}'.",
+        link=f"/pages/team-post-detail.html?id={post.id}",
     )
-    db.add(app)
+
     db.commit()
     db.refresh(app)
     return app
 
 
 def update_application_status(
-    db: Session, application: TeamPostApplication, data: TeamPostApplicationUpdate
+    db: Session,
+    application: TeamPostApplication,
+    data: TeamPostApplicationUpdate,
+    current_user: User,
 ) -> TeamPostApplication:
-    application.status = data.status
+    """Cập nhật trạng thái đơn ứng tuyển:
+
+    - Chủ bài / ADMIN: có quyền ACCEPTED hoặc REJECTED đơn ứng tuyển.
+      + Khi ACCEPTED: nếu đủ số người cần tuyển (accepted_count >= needed_players),
+        bài đăng tự động chuyển sang trạng thái FULL.
+      + Gửi thông báo đến người ứng tuyển.
+    - Người ứng tuyển: có quyền CANCELLED (rút đơn của mình).
+      + Gửi thông báo đến chủ bài đăng.
+      + Nếu đơn rút trước đó đã ACCEPTED và bài đăng đang FULL, kiểm tra mở lại OPEN.
+    """
+    post = application.post or db.get(TeamPost, application.team_post_id)
+    if not post:
+        raise HTTPException(status_code=404, detail="Bài đăng không tồn tại")
+
+    user_role = getattr(current_user, "role", None)
+    role_str = getattr(user_role, "value", user_role)
+    is_owner_or_admin = (current_user.id == post.user_id) or (role_str == "ADMIN")
+    is_applicant = current_user.id == application.user_id
+
+    if not is_owner_or_admin and not is_applicant:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Bạn không có quyền cập nhật đơn ứng tuyển này",
+        )
+
+    if is_owner_or_admin:
+        if data.status not in (ApplicationStatus.ACCEPTED, ApplicationStatus.REJECTED):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Chủ bài đăng chỉ có thể chấp nhận (ACCEPTED) hoặc từ chối (REJECTED) đơn ứng tuyển",
+            )
+
+        if data.status == ApplicationStatus.ACCEPTED:
+            if application.status == ApplicationStatus.ACCEPTED:
+                return application
+
+            if post.status == PostStatus.CLOSED:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Bài đăng đã đóng, không thể duyệt thêm đơn ứng tuyển",
+                )
+
+            # Đếm số người đã được duyệt ACCEPTED hiện tại
+            accepted_count = (
+                db.query(func.count(TeamPostApplication.id))
+                .filter(
+                    TeamPostApplication.team_post_id == post.id,
+                    TeamPostApplication.status == ApplicationStatus.ACCEPTED,
+                )
+                .scalar()
+                or 0
+            )
+
+            if accepted_count >= post.needed_players:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Bài đăng đã tuyển đủ số người (đã đạt giới hạn)",
+                )
+
+            application.status = ApplicationStatus.ACCEPTED
+
+            # Khi đủ người thì bài chuyển FULL
+            if accepted_count + 1 >= post.needed_players:
+                post.status = PostStatus.FULL
+
+            # Gửi thông báo đến người ứng tuyển
+            create_notification(
+                db=db,
+                recipient_id=application.user_id,
+                type="TEAM_POST_APPLICATION_ACCEPTED",
+                content=f"Đơn ứng tuyển của bạn vào bài đăng '{post.title}' đã được chấp nhận!",
+                link=f"/pages/team-post-detail.html?id={post.id}",
+            )
+
+        elif data.status == ApplicationStatus.REJECTED:
+            prev_status = application.status
+            application.status = ApplicationStatus.REJECTED
+
+            # Nếu trước đó đã ACCEPTED và bài đăng đang FULL, mở lại OPEN nếu còn thiếu người
+            if prev_status == ApplicationStatus.ACCEPTED and post.status == PostStatus.FULL:
+                other_accepted = (
+                    db.query(func.count(TeamPostApplication.id))
+                    .filter(
+                        TeamPostApplication.team_post_id == post.id,
+                        TeamPostApplication.id != application.id,
+                        TeamPostApplication.status == ApplicationStatus.ACCEPTED,
+                    )
+                    .scalar()
+                    or 0
+                )
+                if other_accepted < post.needed_players:
+                    post.status = PostStatus.OPEN
+
+            # Gửi thông báo từ chối đến người ứng tuyển
+            create_notification(
+                db=db,
+                recipient_id=application.user_id,
+                type="TEAM_POST_APPLICATION_REJECTED",
+                content=f"Đơn ứng tuyển của bạn vào bài đăng '{post.title}' đã bị từ chối.",
+                link=f"/pages/team-post-detail.html?id={post.id}",
+            )
+
+    else:
+        # Người ứng tuyển tự rút đơn
+        if data.status != ApplicationStatus.CANCELLED:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Người ứng tuyển chỉ được phép rút đơn (CANCELLED)",
+            )
+
+        prev_status = application.status
+        application.status = ApplicationStatus.CANCELLED
+
+        # Nếu trước đó đã ACCEPTED và bài đăng đang FULL, mở lại OPEN nếu còn thiếu người
+        if prev_status == ApplicationStatus.ACCEPTED and post.status == PostStatus.FULL:
+            other_accepted = (
+                db.query(func.count(TeamPostApplication.id))
+                .filter(
+                    TeamPostApplication.team_post_id == post.id,
+                    TeamPostApplication.id != application.id,
+                    TeamPostApplication.status == ApplicationStatus.ACCEPTED,
+                )
+                .scalar()
+                or 0
+            )
+            if other_accepted < post.needed_players:
+                post.status = PostStatus.OPEN
+
+        applicant_name = f"Người dùng #{application.user_id}"
+        user_obj = db.get(User, application.user_id)
+        if user_obj:
+            applicant_name = user_obj.username or f"Người dùng #{application.user_id}"
+
+        # Gửi thông báo đến chủ bài đăng
+        create_notification(
+            db=db,
+            recipient_id=post.user_id,
+            type="TEAM_POST_APPLICATION_CANCELLED",
+            content=f"{applicant_name} đã rút đơn ứng tuyển khỏi bài đăng '{post.title}'.",
+            link=f"/pages/team-post-detail.html?id={post.id}",
+        )
+
     db.commit()
     db.refresh(application)
     return application
 
 
 def delete_application(db: Session, application: TeamPostApplication) -> None:
+    post = application.post or db.get(TeamPost, application.team_post_id)
+    prev_status = application.status
     db.delete(application)
+    db.flush()
+    if post and prev_status == ApplicationStatus.ACCEPTED and post.status == PostStatus.FULL:
+        accepted_count = (
+            db.query(func.count(TeamPostApplication.id))
+            .filter(
+                TeamPostApplication.team_post_id == post.id,
+                TeamPostApplication.status == ApplicationStatus.ACCEPTED,
+            )
+            .scalar()
+            or 0
+        )
+        if accepted_count < post.needed_players:
+            post.status = PostStatus.OPEN
     db.commit()
