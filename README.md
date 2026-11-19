@@ -64,7 +64,11 @@ copy .env.example .env
 cp .env.example .env
 ```
 
-Mở file `.env`, điền **mật khẩu root MySQL** của bạn:
+Mở file `.env`, điền **mật khẩu root MySQL** của bạn. Tạo `SESSION_SECRET_KEY`
+ngẫu nhiên bằng lệnh `python -c "import secrets; print(secrets.token_urlsafe(32))"`
+rồi thay giá trị mẫu trong `.env`. Nếu không dùng đăng nhập Google, giữ nguyên
+giá trị Google OAuth mẫu; nếu dùng, hãy điền OAuth credentials từ Google Cloud
+Console.
 
 ```
 DB_HOST=127.0.0.1
@@ -72,6 +76,10 @@ DB_PORT=3306
 DB_USER=root
 DB_PASSWORD=mat_khau_root_cua_ban
 DB_NAME=app_db
+GOOGLE_CLIENT_ID=replace-with-google-client-id
+GOOGLE_CLIENT_SECRET=replace-with-google-client-secret
+GOOGLE_REDIRECT_URI=http://127.0.0.1:8000/auth/google/callback
+SESSION_SECRET_KEY=gia_tri_ngau_nhien_tu_lenh_python
 ```
 
 ## 5. Bước 3: cài thư viện Python
@@ -143,6 +151,9 @@ Các endpoint bài viết dùng đường dẫn `/posts`. Bảng tin và các th
 |---|---|---|
 | POST | `/posts` | Tạo bài viết |
 | GET | `/posts?skip=0&limit=20` | Bảng tin mới nhất (cần access token Bearer) |
+| GET | `/posts/featured?skip=0&limit=20` | Bài có nhiều lượt thích/bình luận nhất trong 7 ngày gần nhất |
+| GET | `/posts/search?keyword=valorant` | Tìm nội dung bài theo từ khóa |
+| GET | `/posts/search?hashtag=valorant` | Tìm nội dung bài theo hashtag `#valorant` |
 | GET | `/posts/{post_id}` | Chi tiết bài viết |
 | PUT | `/posts/{post_id}` | Cập nhật bài viết |
 | DELETE | `/posts/{post_id}` | Xóa bài viết |
@@ -150,6 +161,8 @@ Các endpoint bài viết dùng đường dẫn `/posts`. Bảng tin và các th
 Nội dung dài 1–2000 ký tự. Ảnh truyền bằng `image_urls` (tối đa 4 URL, mỗi URL tối đa 500 ký tự); `image_url` đơn vẫn được hỗ trợ để tương thích. Response có `like_count`, `comment_count`, `game_ids`, trạng thái và thời gian tạo/sửa. Với database đã có bảng `posts`, chạy `sql/posts_add_image_urls.sql` một lần để thêm cột ảnh mới.
 
 Bảng tin phân trang bằng `skip`/`limit` (giới hạn `limit` tối đa 100) và hỗ trợ lọc tùy chọn `game_id`, `user_id`, `friends_only=true`. Chỉ bài `VISIBLE` được trả về; bài của người dùng có quan hệ chặn với tài khoản hiện tại cũng bị ẩn.
+
+API bài nổi bật xếp theo số lượt thích và bình luận **phát sinh trong 7 ngày gần nhất** (bao gồm cả bài đăng cũ); bài không có tương tác trong khoảng thời gian này không xuất hiện. Tìm kiếm không phân biệt chữ hoa/thường, chỉ trả bài `VISIBLE`, hỗ trợ truyền đồng thời `keyword` và `hashtag` để lọc kết hợp. Các API này cho phép truy cập không cần đăng nhập; nếu đã đăng nhập thì bài từ tài khoản có quan hệ chặn sẽ bị ẩn.
 
 ### Bình luận và lượt thích
 
