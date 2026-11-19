@@ -151,9 +151,16 @@ def get_team_post(db: Session, post_id: int) -> TeamPost | None:
 def create_team_post(
     db: Session,
     data: TeamPostCreate,
-    user_id: int,
+    user_id: int | None = None,
 ) -> TeamPost:
     """Tạo bài đăng tìm đội kèm đầy đủ business validation."""
+    effective_user_id = user_id if user_id is not None else getattr(data, "user_id", None)
+    if not effective_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Không xác định được người đăng bài",
+        )
+    user_id = int(effective_user_id)
     # 1. Kiểm tra giới hạn: Mỗi user tối đa 3 bài đang mở (PostStatus.OPEN)
     open_posts_count = (
         db.query(TeamPost)
@@ -444,8 +451,18 @@ def get_application(db: Session, application_id: int) -> TeamPostApplication | N
 
 
 def create_application(
-    db: Session, team_post_id: int, user_id: int, data: TeamPostApplicationCreate
+    db: Session,
+    team_post_id: int,
+    user_id_or_data: int | TeamPostApplicationCreate,
+    data: TeamPostApplicationCreate | None = None,
 ) -> TeamPostApplication:
+    if isinstance(user_id_or_data, int):
+        user_id = user_id_or_data
+        if data is None:
+            raise HTTPException(status_code=400, detail="Thiếu dữ liệu đơn ứng tuyển")
+    else:
+        data = user_id_or_data
+        user_id = int(getattr(data, "user_id", 0) or 0)
     # Kiểm tra bài đăng có đang OPEN không
     post = db.get(TeamPost, team_post_id)
     if not post:

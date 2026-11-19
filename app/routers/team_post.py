@@ -202,7 +202,9 @@ def create_team_post(
     - Giới hạn: mỗi user tối đa 3 bài đăng đang mở (OPEN).
     """
     return team_post_crud.create_team_post(
-        db, data.model_copy(update={"user_id": current_user.id})
+        db,
+        data.model_copy(update={"user_id": current_user.id}),
+        user_id=current_user.id,
     )
 
 
@@ -283,7 +285,10 @@ def create_application(
             detail="Bài đăng đã đóng hoặc hết hạn, không thể ứng tuyển",
         )
     return team_post_crud.create_application(
-        db, post_id, data.model_copy(update={"user_id": current_user.id})
+        db,
+        post_id,
+        current_user.id,
+        data.model_copy(update={"user_id": current_user.id}),
     )
 
 

@@ -8,10 +8,10 @@ Chuẩn hóa dữ liệu trả về theo format 6 trường của toàn hệ th�
 5. timestamp (thời gian)
 6. path (đường dẫn gọi API)
 """
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.orm import Session
 
-from app.core.security import get_current_user
+from app.core.security import get_current_user, get_optional_user
 from app.crud import matchmaking as matchmaking_crud
 from app.db.session import get_db
 from app.models.user import User
@@ -201,6 +201,97 @@ def leave_team(
         status_code=status.HTTP_200_OK,
         message=result["message"],
         data=result,
+    )
+
+
+@router.delete(
+    "/members/{member_user_id}",
+    response_model=APIRepoint,
+    summary="Chủ phòng xóa thành viên khỏi sảnh đội (Nút ×)",
+)
+def remove_member_from_team(
+    member_user_id: int,
+    req: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Chủ phòng kích một thành viên khỏi sảnh đội 5 ô hiện tại và trả về thông tin sảnh mới."""
+    result = matchmaking_crud.kick_member_from_room(
+        db,
+        host_user_id=current_user.id,
+        member_user_id=member_user_id,
+    )
+    return api_repoint(
+        req=req,
+        status_code=status.HTTP_200_OK,
+        message="Đã xóa thành viên khỏi sảnh đội",
+        data=result.model_dump(),
+    )
+
+
+@router.get(
+    "/rooms",
+    response_model=APIRepoint,
+    summary="Danh sách phòng đang mở (status == WAITING)",
+)
+@router.get(
+    "/open-rooms",
+    response_model=APIRepoint,
+    summary="Danh sách phòng đang mở (Alias)",
+    include_in_schema=False,
+)
+def get_open_rooms(
+    req: Request,
+    game_id: int | None = Query(default=None, description="Lọc theo ID Game"),
+    label: str | None = Query(default=None, description="Lọc theo nhãn phong cách chơi"),
+    limit: int = Query(default=50, ge=1, le=100, description="Số lượng phòng tối đa"),
+    current_user: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    """Lấy danh sách các phòng MatchRoom đang có status == WAITING trong Database."""
+    rooms = matchmaking_crud.list_open_rooms(
+        db,
+        game_id=game_id,
+        label=label,
+        current_user_id=current_user.id if current_user else None,
+        limit=limit,
+    )
+    return api_repoint(
+        req=req,
+        status_code=status.HTTP_200_OK,
+        message="Lấy danh sách phòng đang mở thành công",
+        data=[r.model_dump() for r in rooms],
+    )
+
+
+@router.post(
+    "/join/{room_id}",
+    response_model=APIRepoint,
+    summary="Tham gia trực tiếp vào một phòng WAITING đang mở (+ Tham gia ngay)",
+)
+@router.post(
+    "/rooms/{room_id}/join",
+    response_model=APIRepoint,
+    summary="Tham gia phòng đang mở (Alias)",
+    include_in_schema=False,
+)
+def join_open_room(
+    room_id: int,
+    req: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Người chơi bấm '+ Tham gia ngay' vào một phòng WAITING trong danh sách phòng đang mở."""
+    result = matchmaking_crud.join_waiting_room(
+        db,
+        user_id=current_user.id,
+        room_id=room_id,
+    )
+    return api_repoint(
+        req=req,
+        status_code=status.HTTP_200_OK,
+        message="Tham gia phòng thành công",
+        data=result.model_dump(),
     )
 
 

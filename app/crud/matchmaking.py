@@ -16,6 +16,9 @@ from app.models.matchmaking import MatchRoom, MatchRoomMember, RoomStatus
 from app.models.user import User
 from app.models.game import Game
 from app.models.game_rank import GameRank
+from app.models.game_role import GameRole
+from app.models.gamer_profile import GamerProfile
+from app.models.user_game import UserGame
 from app.models.notification import Notification
 from app.models.block import Block
 from app.schemas.matchmaking import (
@@ -32,9 +35,21 @@ from app.schemas.matchmaking import (
 
 
 def _enrich_room_detail(db: Session, room: MatchRoom, current_user_id: int | None = None) -> MatchRoomOut:
-    """Trả về chi tiết phòng và danh sách người trong phòng kèm ID và Username."""
+    """Trả về chi tiết phòng và danh sách người trong phòng kèm dữ liệu thật từ DB."""
     game = db.get(Game, room.game_id)
     game_name = game.name if game else None
+    game_image = game.image if game else None
+
+    min_rank_name = None
+    max_rank_name = None
+    if room.min_rank_id:
+        min_r = db.get(GameRank, room.min_rank_id)
+        if min_r:
+            min_rank_name = min_r.rank_name
+    if room.max_rank_id:
+        max_r = db.get(GameRank, room.max_rank_id)
+        if max_r:
+            max_rank_name = max_r.rank_name
 
     # Lấy danh sách thành viên trong phòng
     members_stmt = (
@@ -47,10 +62,89 @@ def _enrich_room_detail(db: Session, room: MatchRoom, current_user_id: int | Non
     member_user_ids = [m.user_id for m in db_members]
     is_user_in_room = current_user_id in member_user_ids if current_user_id else False
 
+    host_username = None
+    host_display_name = None
+    host_avatar = None
+
     enriched_members: list[RoomMemberOut] = []
     for m in db_members:
         user = db.get(User, m.user_id)
         username = user.username if user else f"User#{m.user_id}"
+
+        display_name = username
+        avatar = None
+        try:
+            prof_row = (
+                db.query(GamerProfile.display_name, GamerProfile.avatar)
+                .filter(GamerProfile.user_id == m.user_id)
+                .first()
+            )
+            if prof_row:
+                if prof_row[0]:
+                    display_name = prof_row[0]
+                avatar = prof_row[1]
+        except Exception:
+            if not db.is_active:
+                db.rollback()
+
+        rank_id = None
+        rank_name = None
+        rank_icon = None
+        role_id = m.role_id
+        role_name = None
+        roles: list[str] = []
+        in_game_id = None
+
+        try:
+            # Ưu tiên UserGame theo room.game_id, nếu chưa có thì lấy bản ghi UserGame đầu tiên
+            ug = (
+                db.query(UserGame)
+                .filter(
+                    and_(
+                        UserGame.user_id == m.user_id,
+                        UserGame.game_id == room.game_id,
+                    )
+                )
+                .first()
+            )
+            if not ug:
+                ug = (
+                    db.query(UserGame)
+                    .filter(UserGame.user_id == m.user_id)
+                    .order_by(UserGame.updated_at.desc(), UserGame.id.asc())
+                    .first()
+                )
+
+            if ug:
+                rank_id = ug.rank_id
+                in_game_id = ug.in_game_id
+                if ug.rank_id:
+                    rank_obj = db.get(GameRank, ug.rank_id)
+                    if rank_obj:
+                        rank_name = rank_obj.rank_name
+                        rank_icon = getattr(rank_obj, "icon_url", None)
+                if ug.role_id:
+                    if not role_id:
+                        role_id = ug.role_id
+                    role_obj = db.get(GameRole, ug.role_id)
+                    if role_obj and role_obj.role_name:
+                        role_name = role_obj.role_name
+                        roles.append(role_obj.role_name)
+
+            if m.role_id:
+                member_role = db.get(GameRole, m.role_id)
+                if member_role and member_role.role_name:
+                    role_name = member_role.role_name
+                    if member_role.role_name not in roles:
+                        roles.insert(0, member_role.role_name)
+        except Exception:
+            if not db.is_active:
+                db.rollback()
+
+        if m.is_host or m.user_id == room.host_id:
+            host_username = username
+            host_display_name = display_name
+            host_avatar = avatar
 
         enriched_members.append(
             RoomMemberOut(
@@ -58,8 +152,23 @@ def _enrich_room_detail(db: Session, room: MatchRoom, current_user_id: int | Non
                 username=username,
                 is_host=m.is_host,
                 joined_at=m.joined_at,
+                display_name=display_name,
+                avatar=avatar,
+                rank_id=rank_id,
+                rank_name=rank_name,
+                rank_icon=rank_icon,
+                role_id=role_id,
+                role_name=role_name,
+                roles=roles,
+                in_game_id=in_game_id,
             )
         )
+
+    if not host_username:
+        host_user = db.get(User, room.host_id)
+        if host_user:
+            host_username = host_user.username
+            host_display_name = host_user.username
 
     # Chỉ hiển thị game_code khi phòng đã FULL hoặc người xem đang ở trong phòng
     should_show_code = (room.status == RoomStatus.FULL) or is_user_in_room
@@ -68,14 +177,20 @@ def _enrich_room_detail(db: Session, room: MatchRoom, current_user_id: int | Non
     return MatchRoomOut(
         id=room.id,
         host_id=room.host_id,
+        host_username=host_username,
+        host_display_name=host_display_name,
+        host_avatar=host_avatar,
         game_id=room.game_id,
         game_name=game_name,
+        game_image=game_image,
         room_name=room.room_name,
         game_code=code_to_show,
         max_players=room.max_players,
         current_players=room.current_players,
         min_rank_id=room.min_rank_id,
+        min_rank_name=min_rank_name,
         max_rank_id=room.max_rank_id,
+        max_rank_name=max_rank_name,
         label=room.label,
         status=room.status,
         members=enriched_members,
@@ -238,7 +353,7 @@ def invite_friend_to_lobby(db: Session, user_id: int, friend_id: int) -> InviteF
             detail="Bạn không thể tự mời chính mình vào đội!"
         )
 
-    # 1. Lấy sảnh WAITING của người mời
+    # 1. Lấy sảnh WAITING của người mời (Nếu chưa có thì tự động tạo sảnh mặc định 5 người)
     member = db.scalar(
         select(MatchRoomMember)
         .join(MatchRoom, MatchRoomMember.room_id == MatchRoom.id)
@@ -250,12 +365,33 @@ def invite_friend_to_lobby(db: Session, user_id: int, friend_id: int) -> InviteF
         )
     )
     if not member:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Bạn chưa có sảnh đội nào đang mở. Vui lòng tạo sảnh trước khi mời bạn bè!"
-        )
+        # Tự động xác định game_id từ UserGame của người mời (hoặc mặc định game_id = 1)
+        default_game_id = 1
+        try:
+            ug = (
+                db.query(UserGame)
+                .filter(UserGame.user_id == user_id)
+                .order_by(UserGame.updated_at.desc(), UserGame.id.asc())
+                .first()
+            )
+            if ug and ug.game_id:
+                default_game_id = ug.game_id
+            else:
+                first_game = db.query(Game).order_by(Game.id.asc()).first()
+                if first_game:
+                    default_game_id = first_game.id
+        except Exception:
+            default_game_id = 1
 
-    room = db.get(MatchRoom, member.room_id)
+        lobby_out = create_or_get_lobby(
+            db,
+            user_id=user_id,
+            data=CreateLobbyRequest(game_id=default_game_id, max_players=5),
+        )
+        room = db.get(MatchRoom, lobby_out.id)
+    else:
+        room = db.get(MatchRoom, member.room_id)
+
     if not room or room.status != RoomStatus.WAITING:
         raise HTTPException(status_code=400, detail="Sảnh đội hiện không khả dụng.")
 
@@ -743,3 +879,221 @@ def leave_current_room(db: Session, user_id: int) -> dict:
             room.status = RoomStatus.WAITING
         db.commit()
         return {"success": True, "message": "Bạn đã rời đội thành công."}
+
+
+def kick_member_from_room(
+    db: Session,
+    host_user_id: int,
+    member_user_id: int,
+) -> MatchRoomOut:
+    """Chủ phòng xóa một thành viên khỏi sảnh 5 ô hiện tại (Nút ×)."""
+    if host_user_id == member_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Chủ phòng không thể tự xóa chính mình khỏi sảnh. Hãy dùng chức năng Rời đội.",
+        )
+
+    host_member = db.scalar(
+        select(MatchRoomMember)
+        .join(MatchRoom, MatchRoomMember.room_id == MatchRoom.id)
+        .where(
+            and_(
+                MatchRoomMember.user_id == host_user_id,
+                MatchRoom.status != RoomStatus.CANCELLED,
+            )
+        )
+        .order_by(MatchRoom.created_at.desc())
+    )
+    if not host_member:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Bạn hiện không ở trong sảnh đội nào.",
+        )
+
+    room = db.get(MatchRoom, host_member.room_id)
+    if not room or room.status == RoomStatus.CANCELLED:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Sảnh đội không tồn tại hoặc đã giải tán.",
+        )
+
+    if not host_member.is_host and room.host_id != host_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Chỉ chủ phòng mới có quyền xóa thành viên khỏi sảnh đội.",
+        )
+
+    target_member = db.scalar(
+        select(MatchRoomMember).where(
+            and_(
+                MatchRoomMember.room_id == room.id,
+                MatchRoomMember.user_id == member_user_id,
+            )
+        )
+    )
+    if not target_member:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Thành viên này không có mặt trong sảnh đội của bạn.",
+        )
+
+    db.delete(target_member)
+    room.current_players = max(1, room.current_players - 1)
+    if room.status == RoomStatus.FULL and room.current_players < room.max_players:
+        room.status = RoomStatus.WAITING
+
+    db.commit()
+    db.refresh(room)
+    return _enrich_room_detail(db, room, current_user_id=host_user_id)
+
+
+def list_open_rooms(
+    db: Session,
+    game_id: int | None = None,
+    label: str | None = None,
+    current_user_id: int | None = None,
+    limit: int = 50,
+) -> list[MatchRoomOut]:
+    """Lấy danh sách các phòng MatchRoom đang ở trạng thái WAITING từ Database."""
+    stmt = (
+        select(MatchRoom)
+        .where(
+            and_(
+                MatchRoom.status == RoomStatus.WAITING,
+                MatchRoom.current_players < MatchRoom.max_players,
+            )
+        )
+        .order_by(MatchRoom.created_at.desc())
+        .limit(limit)
+    )
+    if game_id and game_id > 0:
+        stmt = stmt.where(MatchRoom.game_id == game_id)
+
+    rooms = list(db.scalars(stmt))
+
+    normalized_filter_label = _normalize_label(label) if label else None
+    result: list[MatchRoomOut] = []
+    for r in rooms:
+        if normalized_filter_label:
+            room_norm_label = _normalize_label(r.label)
+            if room_norm_label != normalized_filter_label and (
+                not r.label or label.strip().lower() not in r.label.strip().lower()
+            ):
+                continue
+        result.append(_enrich_room_detail(db, r, current_user_id=current_user_id))
+
+    return result
+
+
+def join_waiting_room(
+    db: Session,
+    user_id: int,
+    room_id: int,
+) -> MatchRoomOut:
+    """Người chơi bấm '+ Tham gia ngay' vào một phòng WAITING đang mở."""
+    room = db.get(MatchRoom, room_id)
+    if not room or room.status != RoomStatus.WAITING:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Phòng này không tồn tại hoặc đã đủ người / đã đóng.",
+        )
+
+    if room.current_players >= room.max_players:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Phòng đã đủ người, không thể tham gia thêm.",
+        )
+
+    # Nếu đã ở trong phòng này rồi
+    existing = db.scalar(
+        select(MatchRoomMember).where(
+            and_(
+                MatchRoomMember.room_id == room.id,
+                MatchRoomMember.user_id == user_id,
+            )
+        )
+    )
+    if existing:
+        return _enrich_room_detail(db, room, current_user_id=user_id)
+
+    # Kiểm tra chặn (Block) với các thành viên trong phòng
+    room_member_ids = set(
+        db.scalars(select(MatchRoomMember.user_id).where(MatchRoomMember.room_id == room.id))
+    )
+    if room_member_ids:
+        is_blocked = db.scalar(
+            select(Block).where(
+                or_(
+                    and_(Block.blocker_id == user_id, Block.blocked_id.in_(room_member_ids)),
+                    and_(Block.blocker_id.in_(room_member_ids), Block.blocked_id == user_id),
+                )
+            )
+        )
+        if is_blocked:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Không thể tham gia phòng này do có chặn giữa các người chơi.",
+            )
+
+    # Nếu đang ở một sảnh WAITING khác -> Tự động rời sảnh cũ trước
+    old_membership = db.scalar(
+        select(MatchRoomMember)
+        .join(MatchRoom, MatchRoomMember.room_id == MatchRoom.id)
+        .where(
+            and_(
+                MatchRoomMember.user_id == user_id,
+                MatchRoom.status == RoomStatus.WAITING,
+                MatchRoom.id != room.id,
+            )
+        )
+    )
+    if old_membership:
+        old_room = db.get(MatchRoom, old_membership.room_id)
+        db.delete(old_membership)
+        if old_room:
+            old_room.current_players = max(1, old_room.current_players - 1)
+            if old_membership.is_host:
+                other_old = list(
+                    db.scalars(
+                        select(MatchRoomMember).where(
+                            and_(
+                                MatchRoomMember.room_id == old_room.id,
+                                MatchRoomMember.user_id != user_id,
+                            )
+                        )
+                    )
+                )
+                if other_old:
+                    other_old[0].is_host = True
+                    old_room.host_id = other_old[0].user_id
+                else:
+                    old_room.status = RoomStatus.CANCELLED
+
+    # Thêm vào phòng mới
+    new_member = MatchRoomMember(
+        room_id=room.id,
+        user_id=user_id,
+        is_host=False,
+    )
+    db.add(new_member)
+    room.current_players += 1
+
+    # Nếu vừa đủ người -> Chuyển trạng thái FULL và gửi thông báo MATCH_FOUND
+    if room.current_players >= room.max_players:
+        room.status = RoomStatus.FULL
+        all_members = list(
+            db.scalars(select(MatchRoomMember.user_id).where(MatchRoomMember.room_id == room.id))
+        )
+        for mid in all_members:
+            noti = Notification(
+                recipient_id=mid,
+                type="MATCH_FOUND",
+                content=f"Đội '{room.room_name}' đã đủ người! Mã Code Game: {room.game_code}",
+                link=f"/rooms/{room.id}",
+            )
+            db.add(noti)
+
+    db.commit()
+    db.refresh(room)
+    return _enrich_room_detail(db, room, current_user_id=user_id)
+

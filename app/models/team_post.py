@@ -114,7 +114,8 @@ class TeamPost(Base):
 
     @property
     def role_ids(self) -> list[int]:
-        return [r.game_role_id for r in self.post_roles] if self.post_roles else []
+        roles_rel = getattr(self, "post_roles", None) or getattr(self, "roles", None) or []
+        return [r.game_role_id for r in roles_rel]
 
 
 # ---------------------------------------------------------------------------
