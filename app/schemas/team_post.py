@@ -61,6 +61,15 @@ class TeamPostOut(TeamPostBase):
     created_at: datetime
     updated_at: datetime
     role_ids: list[int] = []
+    match_reason: str | None = None
+
+
+class TeamPostRecommendationOut(BaseModel):
+    """Kết quả gợi ý bài đăng tìm đội phù hợp với người dùng (T3CCE98)."""
+    items: list[TeamPostOut]
+    total: int
+    has_profile_games: bool = True
+    user_games: list[str] = []
 
 
 class TeamPostPaginationOut(BaseModel):

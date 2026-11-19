@@ -28,6 +28,7 @@ from app.schemas.team_post import (
     TeamPostDetailOut,
     TeamPostOut,
     TeamPostPaginationOut,
+    TeamPostRecommendationOut,
     TeamPostUpdate,
 )
 
@@ -164,6 +165,41 @@ def list_team_posts(
         "page": eff_page,
         "page_size": eff_page_size,
         "total_pages": total_pages,
+    }
+
+
+@router.get(
+    "/recommendations",
+    response_model=TeamPostRecommendationOut,
+    summary="Gợi ý bài đăng tìm đội phù hợp theo game và rank trong hồ sơ (T3CCE98)",
+)
+@router.get(
+    "/recommended",
+    response_model=TeamPostRecommendationOut,
+    summary="Gợi ý bài đăng tìm đội phù hợp (alias)",
+)
+def get_recommended_posts(
+    limit: int = Query(default=6, ge=1, le=20, description="Số bài tối đa cần gợi ý"),
+    current_user: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    """API Gợi ý bài đăng phù hợp theo game và rank trong hồ sơ (T3CCE98).
+
+    Quy tắc:
+    - Lấy danh sách game và rank trong hồ sơ của người dùng (user_games).
+    - Lọc các bài đăng OPEN, chưa hết hạn, game_id khớp và rank của user nằm trong khoảng min_rank - max_rank.
+    - Loại trừ các bài đăng do chính user tạo.
+    - Bổ sung bài đăng mới nếu chưa đủ số lượng yêu cầu.
+    """
+    user_id = current_user.id if current_user else None
+    items, has_profile_games, user_games = team_post_crud.get_recommended_team_posts(
+        db, user_id=user_id, limit=limit
+    )
+    return {
+        "items": items,
+        "total": len(items),
+        "has_profile_games": has_profile_games,
+        "user_games": user_games,
     }
 
 
