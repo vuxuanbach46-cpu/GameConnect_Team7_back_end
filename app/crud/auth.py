@@ -9,7 +9,7 @@ from app.core.security import (
     create_refresh_token,
 )
 from sqlalchemy.exc import IntegrityError
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import secrets
 import logging
 from app.models.password_reset_token import PasswordResetToken
@@ -84,12 +84,30 @@ def login_service(info: UserLoginRequest, db: Session):
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Tài khoản không tồn tại"
         )
 
-    if not verify_password(info.password, user.password_hash):
+    if not user.password_hash or not verify_password(info.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Mật khẩu sai"
         )
 
     user_status = user.status.value if hasattr(user.status, "value") else str(user.status)
+    if user_status == UserStatus.LOCKED.value:
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        if user.locked_until is None or now < user.locked_until:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Tài khoản bị vô hiệu hóa",
+            )
+        user.status = UserStatus.ACTIVE
+        user.locked_until = None
+        user.locked_reason = None
+        try:
+            db.commit()
+            db.refresh(user)
+        except Exception:
+            db.rollback()
+            raise
+        user_status = UserStatus.ACTIVE.value
+
     if user_status != "ACTIVE":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Tài khoản bị vô hiệu hóa"

@@ -46,6 +46,7 @@ class User(Base):
     status = Column(SQLEnum(UserStatus), nullable=False, default=UserStatus.ACTIVE)
 
     locked_until = Column(DateTime, nullable=True)
+    locked_reason = Column(String(500), nullable=True)
     last_seen = Column(DateTime, nullable=True)
 
     created_at = Column(
