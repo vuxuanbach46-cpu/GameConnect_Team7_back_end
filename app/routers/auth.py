@@ -187,6 +187,11 @@ def login(request: Request, info: UserLoginRequest, db=Depends(get_db)):
     )
 
 
+# Keep the established /auth/login URL and also expose the requested API path.
+api_router = APIRouter(prefix="/api/auth", tags=["AUTH"])
+api_router.add_api_route("/login", login, methods=["POST"], summary="Đăng nhập")
+
+
 @router.post(
     "/refresh",
     summary="Xoay vòng Access Token và Refresh Token",
@@ -340,14 +345,51 @@ async def google_login(
         )
         return RedirectResponse(url=canonical_login_url)
 
-    # Xác định đúng URL trang home.html của Frontend từ redirect_to hoặc Referer header
+    # Cross-origin navigation usually sends only the FE origin in Referer.
+    # The FE passes its sibling home URL explicitly to preserve the right path.
     target_home = None
-    if redirect_to and redirect_to.startswith(("http://", "https://")):
-        target_home = redirect_to
-    else:
-        referer = request.headers.get("referer")
-        if referer and referer.startswith(("http://", "https://")):
-            target_home = urljoin(referer, "home.html")
+    referer = request.headers.get("referer", "")
+    referer_url = urlsplit(referer)
+    configured_home_url = urlsplit(settings.FRONTEND_HOME_URL)
+    allowed_frontend_origins = {
+        (configured_home_url.scheme.lower(), configured_home_url.netloc.lower())
+    }
+    for configured_origin in settings.cors_origin_list:
+        if configured_origin == "*":
+            continue
+        parsed_origin = urlsplit(configured_origin)
+        if parsed_origin.scheme.lower() in {"http", "https"} and parsed_origin.netloc:
+            allowed_frontend_origins.add(
+                (parsed_origin.scheme.lower(), parsed_origin.netloc.lower())
+            )
+    if "*" in settings.cors_origin_list and referer_url.hostname in {
+        "localhost",
+        "127.0.0.1",
+    }:
+        allowed_frontend_origins.add(
+            (referer_url.scheme.lower(), referer_url.netloc.lower())
+        )
+
+    if redirect_to:
+        candidate = urlsplit(redirect_to)
+        if (
+            candidate.scheme.lower() in {"http", "https"}
+            and candidate.path.rstrip("/").endswith("/home.html")
+            and (candidate.scheme.lower(), candidate.netloc.lower())
+            in allowed_frontend_origins
+        ):
+            target_home = urlunsplit(
+                (candidate.scheme, candidate.netloc, candidate.path, "", "")
+            )
+
+    # Compatibility for older FE builds that send a full page Referer.
+    if (
+        target_home is None
+        and referer_url.scheme.lower() in {"http", "https"}
+        and referer_url.netloc
+        and referer_url.path.lower().endswith(("/login.html", "/register.html"))
+    ):
+        target_home = urljoin(referer, "home.html")
 
     request.session["frontend_redirect_to"] = target_home or settings.FRONTEND_HOME_URL
 

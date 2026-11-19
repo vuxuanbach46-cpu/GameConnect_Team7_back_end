@@ -22,10 +22,15 @@ def _auth_error(request: Request, message: str) -> JSONResponse:
         message="Failed",
         error=message,
     )
+    headers = {"WWW-Authenticate": "Bearer"}
+    origin = request.headers.get("origin")
+    if origin:
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
     return JSONResponse(
         status_code=response.status_code,
         content=jsonable_encoder(response),
-        headers={"WWW-Authenticate": "Bearer"},
+        headers=headers,
     )
 
 

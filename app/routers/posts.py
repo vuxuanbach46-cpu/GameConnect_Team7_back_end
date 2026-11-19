@@ -34,6 +34,22 @@ def _post_response(post: Post, like_count: int, comment_count: int) -> PostOut:
     )
 
 
+def _post_list_response(
+    req: Request, db: Session, posts: list[Post], message: str
+):
+    counts = post_crud.get_post_counts_by_id(db, [post.id for post in posts])
+    results = [
+        _post_response(post, *counts[post.id]).model_dump(mode="json")
+        for post in posts
+    ]
+    return api_repoint(
+        req=req,
+        status_code=status.HTTP_200_OK,
+        message=message,
+        data=results,
+    )
+
+
 def _post_or_404(db: Session, post_id: int) -> Post:
     post = post_crud.get_post(db, post_id)
     if post is None or post.status != "VISIBLE":
@@ -109,17 +125,52 @@ def list_posts(
         skip=skip,
         limit=limit,
     )
-    counts = post_crud.get_post_counts_by_id(db, [post.id for post in posts])
-    results = [
-        _post_response(post, *counts[post.id]).model_dump(mode="json")
-        for post in posts
-    ]
-    return api_repoint(
-        req=req,
-        status_code=status.HTTP_200_OK,
-        message="Lấy danh sách bài viết thành công",
-        data=results,
+    return _post_list_response(req, db, posts, "Lấy danh sách bài viết thành công")
+
+
+@router.get("/featured", summary="Bài viết nổi bật trong 7 ngày")
+def list_featured_posts(
+    req: Request,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_user),
+):
+    posts = post_crud.get_featured_posts(
+        db,
+        current_user_id=current_user.id if current_user else None,
+        skip=skip,
+        limit=limit,
     )
+    return _post_list_response(req, db, posts, "Lấy bài viết nổi bật thành công")
+
+
+@router.get("/search", summary="Tìm kiếm bài viết")
+def search_posts(
+    req: Request,
+    keyword: str | None = Query(default=None, min_length=1, max_length=100),
+    hashtag: str | None = Query(default=None, min_length=1, max_length=100),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_user),
+):
+    keyword = keyword.strip() if keyword is not None else None
+    hashtag = hashtag.strip().lstrip("#") if hashtag is not None else None
+    if not keyword and not hashtag:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Cần cung cấp keyword hoặc hashtag",
+        )
+    posts = post_crud.search_posts(
+        db,
+        keyword=keyword or None,
+        hashtag=hashtag or None,
+        current_user_id=current_user.id if current_user else None,
+        skip=skip,
+        limit=limit,
+    )
+    return _post_list_response(req, db, posts, "Tìm kiếm bài viết thành công")
 
 
 @router.get("/{post_id}", summary="Chi tiết bài viết")

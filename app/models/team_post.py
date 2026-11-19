@@ -49,7 +49,7 @@ class TeamPost(Base):
 
     __tablename__ = "team_posts"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
 
     # FK → users.id (BigInteger)
     user_id: Mapped[int] = mapped_column(
@@ -151,7 +151,7 @@ class TeamPostApplication(Base):
 
     __tablename__ = "team_post_applications"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
 
     team_post_id: Mapped[int] = mapped_column(
         BigInteger,

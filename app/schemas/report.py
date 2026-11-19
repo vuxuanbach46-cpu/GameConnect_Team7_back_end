@@ -25,3 +25,26 @@ class ReportCreate(BaseModel):
     target_id: int = Field(gt=0)
     reason: ReportReason
     description: Optional[str] = Field(default=None, max_length=2000)
+
+
+class ReportStatus(str, Enum):
+    PENDING = "PENDING"
+    RESOLVED = "RESOLVED"
+    REJECTED = "REJECTED"
+
+
+class ModerationAction(str, Enum):
+    HIDE_POST = "HIDE_POST"
+    SHOW_POST = "SHOW_POST"
+    DELETE_COMMENT = "DELETE_COMMENT"
+    LOCK_USER = "LOCK_USER"
+
+
+class ReportResolve(BaseModel):
+    status: ReportStatus = ReportStatus.RESOLVED
+    result: str = Field(min_length=1, max_length=2000)
+    action: Optional[ModerationAction] = None
+
+
+class PostVisibilityUpdate(BaseModel):
+    status: str = Field(pattern="^(VISIBLE|HIDDEN)$")
