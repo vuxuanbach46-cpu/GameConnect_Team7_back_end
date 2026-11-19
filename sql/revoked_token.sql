@@ -1,0 +1,8 @@
+USE app_db;
+
+CREATE TABLE IF NOT EXISTS revoked_tokens (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    token_jti VARCHAR(36) NOT NULL UNIQUE,
+    expires_at DATETIME NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);

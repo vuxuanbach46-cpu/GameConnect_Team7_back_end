@@ -36,3 +36,13 @@ INSERT INTO users (email, username, password_hash, role, status, locked_until, l
 ('gammer18@example.com', 'vinh_gamer', '$2b$12$e8Y...sample_bcrypt_hash_18...', 'USER', 'ACTIVE', NULL, NOW()),
 ('gammer19@example.com', 'cuc_cute', '$2b$12$e8Y...sample_bcrypt_hash_19...', 'USER', 'ACTIVE', NULL, NOW()),
 ('gammer20@example.com', 'doanh_fit', '$2b$12$e8Y...sample_bcrypt_hash_20...', 'USER', 'ACTIVE', NULL, NOW());
+
+ALTER TABLE users
+MODIFY COLUMN password_hash VARCHAR(255) NULL;
+
+ALTER TABLE users
+ADD COLUMN google_id VARCHAR(255) NULL UNIQUE;
+
+ALTER TABLE users
+ADD COLUMN auth_provider ENUM('LOCAL', 'GOOGLE')
+NOT NULL DEFAULT 'LOCAL';

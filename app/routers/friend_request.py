@@ -22,6 +22,8 @@ from app.crud.friend_request import (
     reject_friend_request,
     unfriend,
     get_friends_list,
+    get_mutual_friends,
+    get_friend_suggestions,
 )
 
 
@@ -291,3 +293,51 @@ def remove_friend(
             "unfriended_username": friend.username
         }
     )
+
+
+# ===========================================================================
+# Bạn chung (Mutual Friends) & Gợi ý kết bạn (Friend Suggestions)
+# ===========================================================================
+
+@router.get("/mutual-friends/{target_user_id}", summary="Xem số bạn chung và danh sách bạn chung")
+@router.get("/friends/mutual/{target_user_id}", summary="Xem số bạn chung (Alias)", include_in_schema=False)
+def list_mutual_friends(
+    target_user_id: int,
+    req: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Lấy số lượng và danh sách bạn chung giữa bạn và một người dùng khác:
+    - Trả về số lượng `mutual_friends_count`.
+    - Danh sách các bạn chung kèm `id`, `username`, `display_name`, `avatar`.
+    """
+    data = get_mutual_friends(db=db, current_user_id=current_user.id, target_user_id=target_user_id)
+    return api_repoint(
+        req=req,
+        status_code=status.HTTP_200_OK,
+        message="Lấy danh sách bạn chung thành công",
+        data=data,
+    )
+
+
+@router.get("/suggestions", summary="Gợi ý kết bạn theo bạn chung và game chung")
+@router.get("/friends/suggestions", summary="Gợi ý kết bạn (Alias)", include_in_schema=False)
+def list_friend_suggestions(
+    req: Request,
+    limit: int = Query(default=20, ge=1, le=100, description="Số lượng người gợi ý tối đa"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Gợi ý kết bạn thông minh hiển thị ở tab GỢI Ý KẾT BẠN trên trang Bạn bè:
+    - Thuật toán ưu tiên người có bạn chung và người cùng chơi các tựa game.
+    - Loại trừ chính mình, những người đã là bạn bè, lời mời đang chờ và người bị chặn.
+    - Trả về: bạn chung, mẫu tên bạn chung, các game cùng chơi và lý do gợi ý.
+    """
+    data = get_friend_suggestions(db=db, current_user_id=current_user.id, limit=limit)
+    return api_repoint(
+        req=req,
+        status_code=status.HTTP_200_OK,
+        message="Lấy danh sách gợi ý kết bạn thành công",
+        data=data,
+    )
+
