@@ -47,7 +47,9 @@ def get_post_or_404(post_id: int, db: Session = Depends(get_db)):
 
 
 def require_post_owner(post, current_user: User) -> None:
-    if post.user_id != current_user.id:
+    user_role = getattr(current_user, "role", None)
+    role_str = getattr(user_role, "value", user_role)
+    if post.user_id != current_user.id and role_str != "ADMIN":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Chỉ chủ bài đăng mới được thực hiện thao tác này",
@@ -304,22 +306,22 @@ def list_applications(
 def create_application(
     post_id: int,
     data: TeamPostApplicationCreate,
-    post=Depends(get_post_or_404),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if post.user_id == current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Bạn không thể ứng tuyển vào bài đăng của chính mình",
-        )
-    if post.status != PostStatus.OPEN:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Bài đăng đã đóng hoặc hết hạn, không thể ứng tuyển",
-        )
+    """Nộp đơn ứng tuyển vào bài đăng kèm lời nhắn.
+
+    Quy tắc nghiệp vụ:
+    - Không ứng tuyển bài của chính mình.
+    - Không gửi trùng đơn (nếu đã PENDING hoặc ACCEPTED).
+    - Bài đăng phải còn mở (OPEN) và chưa hết hạn.
+    - Gửi thông báo đến chủ bài đăng qua module Thông báo.
+    """
     return team_post_crud.create_application(
-        db, post_id, data.model_copy(update={"user_id": current_user.id})
+        db=db,
+        team_post_id=post_id,
+        user_id=current_user.id,
+        data=data,
     )
 
 
@@ -328,23 +330,34 @@ def create_application(
     response_model=TeamPostApplicationOut,
     summary="Cập nhật trạng thái đơn ứng tuyển",
 )
+@router.patch(
+    "/{post_id}/applications/{application_id}",
+    response_model=TeamPostApplicationOut,
+    summary="Cập nhật trạng thái đơn ứng tuyển",
+    include_in_schema=False,
+)
 def update_application(
+    post_id: int,
+    application_id: int,
     data: TeamPostApplicationUpdate,
     application=Depends(get_application_or_404),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if application.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Chỉ người gửi đơn mới được cập nhật đơn ứng tuyển",
-        )
-    if data.status.value != "CANCELLED":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Người ứng tuyển chỉ được phép rút đơn; chủ bài đăng xử lý trạng thái duyệt",
-        )
-    return team_post_crud.update_application_status(db, application, data)
+    """Cập nhật trạng thái đơn ứng tuyển:
+
+    - Chủ bài đăng / ADMIN: Chấp nhận (ACCEPTED) hoặc Từ chối (REJECTED).
+      + Khi đủ người (accepted_count >= needed_players), bài đăng tự động chuyển sang FULL.
+      + Gửi thông báo đến người ứng tuyển.
+    - Người ứng tuyển: Rút đơn (CANCELLED).
+      + Gửi thông báo đến chủ bài đăng.
+    """
+    return team_post_crud.update_application_status(
+        db=db,
+        application=application,
+        data=data,
+        current_user=current_user,
+    )
 
 
 @router.delete(
@@ -353,13 +366,19 @@ def update_application(
     summary="Xóa / rút đơn ứng tuyển",
 )
 def delete_application(
+    post_id: int,
+    application_id: int,
     application=Depends(get_application_or_404),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if application.user_id != current_user.id:
+    post = application.post or db.get(TeamPost, post_id)
+    user_role = getattr(current_user, "role", None)
+    role_str = getattr(user_role, "value", user_role)
+    is_owner_or_admin = (post and post.user_id == current_user.id) or (role_str == "ADMIN")
+    if application.user_id != current_user.id and not is_owner_or_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Chỉ người gửi đơn mới được hủy đơn ứng tuyển",
+            detail="Chỉ người gửi đơn hoặc chủ bài đăng mới được xóa đơn ứng tuyển",
         )
     team_post_crud.delete_application(db, application)
