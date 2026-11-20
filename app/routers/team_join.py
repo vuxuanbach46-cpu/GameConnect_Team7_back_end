@@ -13,12 +13,26 @@ from app.schemas.team_join import (
 )
 
 from app.schemas.api_response import api_repoint
+from app.models.user import User
 
 router = APIRouter(
     prefix="/teams",
     tags=["Team Join"],
 )
 
+@router.get("/me", summary="Danh sách đội tôi đang tham gia")
+def get_my_teams(
+    req: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    teams = crud.get_user_teams(db=db, user_id=current_user.id)
+    return api_repoint(
+        req=req,
+        status_code=200,
+        message="Danh sách đội đang tham gia",
+        data=teams,
+    )
 
 # Gửi yêu cầu hoặc tham gia đội
 @router.post(

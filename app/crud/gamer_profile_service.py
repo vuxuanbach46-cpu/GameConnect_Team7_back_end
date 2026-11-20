@@ -10,7 +10,7 @@ from app.models.user import User
 import os
 
 
-AVATAR_DIR = Path("app/uploads/avatars")
+AVATAR_DIR = Path(__file__).resolve().parent.parent / "uploads" / "avatars"
 AVATAR_DIR.mkdir(parents=True, exist_ok=True)
 
 MAX_FILE_SIZE = 5 * 1024 * 1024
@@ -32,6 +32,30 @@ IMAGE_SIGNATURES = {
         and data[8:12] == b"WEBP"
     )
 }
+
+
+def create_profile(db: Session, user_id: int, profile_data):
+    existing = get_profile_by_user_id(db, user_id)
+    if existing:
+        raise HTTPException(status_code=409, detail="Hồ sơ game thủ đã tồn tại")
+
+    display_name = profile_data.display_name.strip()
+    if not display_name:
+        raise HTTPException(status_code=400, detail="Tên hiển thị không được để trống")
+
+    profile = GamerProfile(
+        user_id=user_id,
+        display_name=display_name,
+        bio=profile_data.bio,
+        region=profile_data.region,
+        play_time=profile_data.play_time,
+        has_mic=profile_data.has_mic,
+        is_public=profile_data.is_public,
+    )
+    db.add(profile)
+    db.commit()
+    db.refresh(profile)
+    return profile
 
 
 def get_profile_by_user_id(db: Session, user_id: int):

@@ -18,7 +18,7 @@ from app.db.session import Base, engine
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.routers import auth, gamer_profile, notifications, posts, team_post, users
-from app.routers import games, user_games, admin_games
+from app.routers import games, user_games, admin_games, profile_search
 from app.routers import matchmaking
 from app.core.auth_middleware import AuthMiddleware
 from app.routers import reports
@@ -148,6 +148,7 @@ app.include_router(reports.router)
 app.include_router(team_join.router, prefix="/api")
 app.add_middleware(AuthMiddleware)
 app.include_router(team.router, prefix="/api")
+app.include_router(profile_search.router)
 
 
 @app.get("/")
