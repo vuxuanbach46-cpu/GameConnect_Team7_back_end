@@ -15,5 +15,6 @@ def lock_user_account(db: Session, user_id: int) -> User:
 
     user.status = "LOCKED"
     user.locked_until = None
+    user.locked_reason = "Bị khóa bởi quản trị viên"
     db.flush()
     return user

@@ -1,5 +1,5 @@
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, String, text
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, String, text
 from sqlalchemy.orm import mapped_column
 
 from app.db.session import Base
@@ -8,7 +8,7 @@ from app.db.session import Base
 class Notification(Base):
     __tablename__ = "notifications"
 
-    id = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     recipient_id = mapped_column(
         BigInteger, ForeignKey("users.id"), nullable=False
     )

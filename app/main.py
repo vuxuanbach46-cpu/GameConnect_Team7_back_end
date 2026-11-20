@@ -24,6 +24,7 @@ from app.core.auth_middleware import AuthMiddleware
 from app.routers import reports
 from app.routers import friend_request
 from app.routers import team_join, team
+from app.routers import admin_users
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -93,6 +94,11 @@ async def lifespan(app: FastAPI):
                         text("ALTER TABLE users ADD COLUMN auth_provider ENUM('LOCAL', 'GOOGLE') NOT NULL DEFAULT 'LOCAL'")
                     )
                     print("[DB] Added users.auth_provider column.")
+                if "locked_reason" not in user_cols:
+                    connection.execute(
+                        text("ALTER TABLE users ADD COLUMN locked_reason VARCHAR(500) NULL AFTER locked_until")
+                    )
+                    print("[DB] Added users.locked_reason column.")
                 connection.execute(
                     text("ALTER TABLE users MODIFY COLUMN password_hash VARCHAR(255) NULL")
                 )
@@ -121,18 +127,36 @@ app.add_middleware(
     https_only=False,
 )
 
+# Middleware xác thực user
+app.add_middleware(AuthMiddleware)
+
 # CORS: cho phép trang FE (khác cổng/khác domain) gọi được API này
-origins = settings.cors_origin_list
+origins = list(settings.cors_origin_list)
+default_origins = [
+    "http://127.0.0.1:5500",
+    "http://localhost:5500",
+    "http://127.0.0.1:8000",
+    "http://localhost:8000",
+    "http://127.0.0.1:3000",
+    "http://localhost:3000",
+]
+for d in default_origins:
+    if d not in origins:
+        origins.append(d)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins if "*" not in origins else ["*"],
-    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$" if "*" in origins else None,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Register the API routers imported above. Without these calls FastAPI starts
+# successfully, but the routes (including every /auth endpoint) return 404.
 app.include_router(auth.router)
+app.include_router(auth.api_router)
 app.include_router(users.router)
 app.include_router(gamer_profile.router)
 app.include_router(friend_request.router)
@@ -143,10 +167,10 @@ app.include_router(posts.router)
 app.include_router(games.router)
 app.include_router(user_games.router)
 app.include_router(admin_games.router)
-app.include_router(team_join.router)
-app.include_router(reports.router)
 app.include_router(team_join.router, prefix="/api")
-app.add_middleware(AuthMiddleware)
+app.include_router(reports.public_router)
+app.include_router(reports.router)
+app.include_router(admin_users.router)
 app.include_router(team.router, prefix="/api")
 app.include_router(profile_search.router)
 
