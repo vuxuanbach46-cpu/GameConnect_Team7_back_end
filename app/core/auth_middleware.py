@@ -40,6 +40,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
     ) -> Response:
         request.state.user_id = None
 
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
         path = request.url.path.rstrip("/")
         if any(
             path.endswith(p)

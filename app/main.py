@@ -69,6 +69,17 @@ async def lifespan(app: FastAPI):
                     )
                     print("[DB] Added match_rooms.label column.")
 
+            if "match_room_members" in table_names_set:
+                mrm_cols = {
+                    column["name"]
+                    for column in inspect(connection).get_columns("match_room_members")
+                }
+                if "role_id" not in mrm_cols:
+                    connection.execute(
+                        text("ALTER TABLE match_room_members ADD COLUMN role_id INT NULL")
+                    )
+                    print("[DB] Added match_room_members.role_id column.")
+
             if "gamer_profiles" in table_names_set:
                 gp_cols = {
                     column["name"] for column in inspect(connection).get_columns("gamer_profiles")
@@ -127,6 +138,14 @@ app.add_middleware(
     https_only=False,
 )
 
+<<<<<<< HEAD
+app.add_middleware(AuthMiddleware)
+
+# CORS: cho phép trang FE (khác cổng/khác domain) gọi được API này
+# Đặt CORSMiddleware sau AuthMiddleware để CORSMiddleware bọc ngoài cùng,
+# đảm bảo mọi response (kể cả 401 từ AuthMiddleware) đều luôn có CORS headers.
+origins = settings.cors_origin_list
+=======
 # Middleware xác thực user
 app.add_middleware(AuthMiddleware)
 
@@ -144,6 +163,7 @@ for d in default_origins:
     if d not in origins:
         origins.append(d)
 
+>>>>>>> 94a957fa4acd725cb3a11298224366f18ba670f6
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins if "*" not in origins else ["*"],
@@ -168,9 +188,12 @@ app.include_router(games.router)
 app.include_router(user_games.router)
 app.include_router(admin_games.router)
 app.include_router(team_join.router, prefix="/api")
+<<<<<<< HEAD
+=======
 app.include_router(reports.public_router)
 app.include_router(reports.router)
 app.include_router(admin_users.router)
+>>>>>>> 94a957fa4acd725cb3a11298224366f18ba670f6
 app.include_router(team.router, prefix="/api")
 
 

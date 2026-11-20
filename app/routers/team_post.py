@@ -240,7 +240,9 @@ def create_team_post(
     - Giới hạn: mỗi user tối đa 3 bài đăng đang mở (OPEN).
     """
     return team_post_crud.create_team_post(
-        db, data.model_copy(update={"user_id": current_user.id})
+        db,
+        data.model_copy(update={"user_id": current_user.id}),
+        user_id=current_user.id,
     )
 
 
@@ -318,10 +320,17 @@ def create_application(
     - Gửi thông báo đến chủ bài đăng qua module Thông báo.
     """
     return team_post_crud.create_application(
+<<<<<<< HEAD
+        db,
+        post_id,
+        current_user.id,
+        data.model_copy(update={"user_id": current_user.id}),
+=======
         db=db,
         team_post_id=post_id,
         user_id=current_user.id,
         data=data,
+>>>>>>> 94a957fa4acd725cb3a11298224366f18ba670f6
     )
 
 
