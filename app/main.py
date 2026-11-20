@@ -5,6 +5,8 @@ Tài liệu API tự sinh: http://127.0.0.1:8000/docs
 """
 
 from contextlib import asynccontextmanager
+from pathlib import Path
+from fastapi.staticfiles import StaticFiles
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -117,6 +119,20 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title=settings.APP_NAME, lifespan=lifespan)
+# Cấu hình thư mục lưu và phục vụ file upload
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+UPLOAD_DIR = BASE_DIR / "app" / "uploads"
+AVATAR_DIR = UPLOAD_DIR / "avatars"
+
+AVATAR_DIR.mkdir(parents=True, exist_ok=True)
+
+app.mount(
+    "/uploads",
+    StaticFiles(directory=str(UPLOAD_DIR)),
+    name="uploads"
+)
+
 app.state.limiter = limiter
 register_exception_handlers(app)
 
