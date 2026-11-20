@@ -119,3 +119,32 @@ class TeamPostApplicationOut(TeamPostApplicationBase):
 class TeamPostDetailOut(TeamPostOut):
     """Chi tiết bài đăng kèm danh sách đơn ứng tuyển."""
     applications: list[TeamPostApplicationOut] = []
+
+
+# ---------------------------------------------------------------------------
+# Tạo đội từ bài đăng đủ người (Task T3CD622)
+# ---------------------------------------------------------------------------
+
+class CreateTeamFromPostRequest(BaseModel):
+    name: str | None = Field(default=None, max_length=100, description="Tên đội (tùy chọn, mặc định lấy theo bài đăng)")
+    description: str | None = Field(default=None, description="Mô tả đội")
+    logo_url: str | None = Field(default=None, max_length=500, description="URL logo của đội")
+    join_mode: str | None = Field(default="APPROVAL_REQUIRED", description="Chế độ gia nhập: PUBLIC hoặc APPROVAL_REQUIRED")
+
+
+class CreateTeamMemberItem(BaseModel):
+    user_id: int
+    role: str
+    username: str | None = None
+
+
+class CreateTeamFromPostResponse(BaseModel):
+    team_id: int
+    team_name: str
+    main_game_id: int
+    captain_id: int
+    max_members: int
+    members_count: int
+    members: list[CreateTeamMemberItem]
+    message: str
+

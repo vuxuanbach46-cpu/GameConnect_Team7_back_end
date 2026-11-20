@@ -30,7 +30,7 @@ class Team(Base):
     )
 
     id = Column(
-        BigInteger,
+        BigInteger().with_variant(Integer, "sqlite"),
         primary_key=True,
         index=True,
         autoincrement=True,
