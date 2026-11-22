@@ -22,3 +22,5 @@ from app.models.matchmaking import MatchRoom, MatchRoomMember, MatchQueue  # noq
 from app.models.revoked_token import RevokedToken  # noqa: F401
 from app.models.password_reset_token import PasswordResetToken  # noqa: F401
 from app.models.matchmaking import MatchRoom, MatchRoomMember, MatchQueue  # noqa: F401
+
+from app.models.team_invitation import TeamInvitation  # noqa: F401
