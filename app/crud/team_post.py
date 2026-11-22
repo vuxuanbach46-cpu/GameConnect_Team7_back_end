@@ -569,7 +569,6 @@ def create_application(
     user_id_or_data: int | TeamPostApplicationCreate,
     data: TeamPostApplicationCreate | None = None,
 ) -> TeamPostApplication:
-<<<<<<< HEAD
     if isinstance(user_id_or_data, int):
         user_id = user_id_or_data
         if data is None:
@@ -578,9 +577,6 @@ def create_application(
         data = user_id_or_data
         user_id = int(getattr(data, "user_id", 0) or 0)
     # Kiểm tra bài đăng có đang OPEN không
-=======
-    # 1. Kiểm tra bài đăng tồn tại
->>>>>>> 94a957fa4acd725cb3a11298224366f18ba670f6
     post = db.get(TeamPost, team_post_id)
     if not post:
         raise HTTPException(status_code=404, detail="Bài đăng không tồn tại")

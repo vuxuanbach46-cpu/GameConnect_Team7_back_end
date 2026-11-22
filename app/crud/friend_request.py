@@ -627,6 +627,7 @@ def _get_real_user_card(
         "region": region,
         "play_time": play_time,
         "has_mic": has_mic,
+        "last_seen": target_user.last_seen,
         "mutual_friends_count": mutual_friends_count,
         "in_room": in_room,
         "room_info": room_info,
