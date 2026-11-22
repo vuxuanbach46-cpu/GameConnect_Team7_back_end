@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     DB_HOST: str = "localhost"
     DB_PORT: int = 3306
     DB_USER: str = "root"
-    DB_PASSWORD: str = "2632006"
+    DB_PASSWORD: str = "123456@"
     DB_NAME: str = "app_db"
 
     SECRET_KEY: str = "gameconnect_team7_secret_key_fixed_for_dev_session_2026"

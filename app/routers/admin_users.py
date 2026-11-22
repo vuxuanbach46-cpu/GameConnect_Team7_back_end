@@ -47,6 +47,23 @@ def get_users(
     )
 
 
+@router.get("/{user_id}", summary="Chi tiết người dùng")
+def get_user_detail(
+    user_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy người dùng")
+    return api_repoint(
+        req=request,
+        status_code=status.HTTP_200_OK,
+        message="Lấy thông tin người dùng thành công",
+        data=AdminUserItem.model_validate(user).model_dump(mode="json"),
+    )
+
+
 @router.patch("/{user_id}/lock", summary="Khóa tài khoản người dùng")
 def lock_user_account(
     user_id: int,
