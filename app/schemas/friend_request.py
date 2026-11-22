@@ -71,3 +71,31 @@ class FriendSuggestionsResponse(BaseModel):
     total: int
     suggestions: list[FriendSuggestionItem] = []
 
+
+# ---------------------------------------------------------------------------
+# Schemas cho Chặn & Bỏ chặn người dùng (Block / Unblock)
+# ---------------------------------------------------------------------------
+
+class BlockUserRequest(BaseModel):
+    blocked_id: int
+
+
+class BlockUserResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    blocker_id: int
+    blocked_id: int
+    blocked_username: str
+    created_at: datetime
+
+
+class BlockedUserItem(BaseModel):
+    block_id: int
+    user_id: int
+    username: str
+    display_name: str | None = None
+    avatar: str | None = None
+    blocked_at: datetime
+
+

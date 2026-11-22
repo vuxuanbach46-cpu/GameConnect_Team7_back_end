@@ -110,6 +110,12 @@ def get_current_user(
             status_code=status.HTTP_403_FORBIDDEN, detail="Tài khoản đã bị vô hiệu hóa"
         )
 
+    try:
+        user.last_seen = datetime.now()
+        db.commit()
+    except Exception:
+        db.rollback()
+
     return user
 
 
@@ -135,6 +141,12 @@ def get_optional_user(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Tài khoản đã bị vô hiệu hóa"
         )
+
+    try:
+        user.last_seen = datetime.now()
+        db.commit()
+    except Exception:
+        db.rollback()
 
     return user
 

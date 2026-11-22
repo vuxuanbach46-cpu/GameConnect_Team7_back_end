@@ -69,6 +69,17 @@ async def lifespan(app: FastAPI):
                     )
                     print("[DB] Added match_rooms.label column.")
 
+            if "match_room_members" in table_names_set:
+                mrm_cols = {
+                    column["name"]
+                    for column in inspect(connection).get_columns("match_room_members")
+                }
+                if "role_id" not in mrm_cols:
+                    connection.execute(
+                        text("ALTER TABLE match_room_members ADD COLUMN role_id INT NULL")
+                    )
+                    print("[DB] Added match_room_members.role_id column.")
+
             if "gamer_profiles" in table_names_set:
                 gp_cols = {
                     column["name"] for column in inspect(connection).get_columns("gamer_profiles")
