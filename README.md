@@ -214,3 +214,9 @@ Các thao tác ghi yêu cầu access token Bearer. Nội dung bình luận dài 
 ## 11. (Không bắt buộc) Chạy MySQL bằng Docker
 
 Chỉ dành cho bạn nào đã biết Docker và không muốn cài MySQL. Trong `backend/` chạy `docker compose up -d`: MySQL chạy ở cổng **3307**, tự tạo bảng từ `sql/init.sql`. Khi đó sửa `.env` thành `DB_PORT=3307`, `DB_USER=app_user`, `DB_PASSWORD=app_password`.
+
+### Lời mời vào đội (T3CD7E2)
+
+Chạy `sql/team_invitations.sql` trên cơ sở dữ liệu hiện có (hoặc bổ sung bảng bằng `sql/run_all.sql` khi khởi tạo mới). Đội trưởng có thể mời game thủ từ hồ sơ trong trang Bạn bè; người nhận mở **Lời mời vào đội** để chấp nhận hoặc từ chối. Backend kiểm tra quyền đội trưởng, quan hệ chặn, số chỗ còn lại và quyền phản hồi; lời mời và thông báo được lưu trong cơ sở dữ liệu.
+
+API yêu cầu Bearer access token: `GET /api/team-invitations/captain-teams`, `POST /api/team-invitations` với `team_id` và `user_id`, `GET /api/team-invitations/me`, và `PATCH /api/team-invitations/{id}` với `action` là `accept` hoặc `reject`. Chạy kiểm thử bằng `python -m unittest discover -s tests -p test_team_invitations.py -v`.
