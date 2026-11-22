@@ -17,6 +17,7 @@ from app.models.team_join_request import TeamJoinRequest, TeamJoinRequestStatus
 from app.models.team_member import TeamMember
 from app.models.user import User
 from app.routers.team_invitation import router
+from app.routers.team import router as teams_router
 
 @compiles(BigInteger, 'sqlite')
 def sqlite_bigint(type_, compiler, **kwargs): return 'INTEGER'
@@ -32,7 +33,7 @@ class InvitationTests(unittest.TestCase):
             db.add(Team(id=1, name='Alpha', main_game_id=1, captain_id=1, max_members=2))
             db.add(TeamMember(team_id=1, user_id=1, role='CAPTAIN'))
             db.commit()
-        app = FastAPI(); app.include_router(router)
+        app = FastAPI(); app.include_router(router); app.include_router(teams_router, prefix="/api")
         def db_override():
             db = self.Session()
             try: yield db
@@ -59,6 +60,17 @@ class InvitationTests(unittest.TestCase):
             self.assertIsNotNone(db.query(TeamMember).filter_by(team_id=1,user_id=2).first())
             self.assertEqual(db.query(Notification).count(),2)
             self.assertEqual(db.query(TeamJoinRequest).filter_by(team_id=1,user_id=2).first().status,TeamJoinRequestStatus.ACCEPTED)
+    def test_my_teams_after_accept(self):
+        self.assertEqual(self.request('GET','/api/teams/mine').status_code,401)
+        self.assertEqual(self.request('GET','/api/teams/mine',2).json()['data'],[])
+        invitation=self.invite().json()['data']['id']
+        self.assertEqual(self.request('PATCH',f'/api/team-invitations/{invitation}',2,{'action':'accept'}).status_code,200)
+        team=self.request('GET','/api/teams/mine',2).json()['data'][0]
+        self.assertEqual((team['name'],team['role'],team['members']),('Alpha','member',2))
+        captain=self.request('GET','/api/teams/mine',1).json()['data'][0]
+        self.assertEqual(captain['role'],'captain')
+        self.assertEqual(self.request('GET','/api/teams/mine',3).json()['data'],[])
+
     def test_reject_and_reinvite(self):
         invitation=self.invite().json()['data']['id']
         self.assertEqual(self.request('PATCH',f'/api/team-invitations/{invitation}',2,{'action':'reject'}).status_code,200)
