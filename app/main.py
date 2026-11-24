@@ -25,7 +25,7 @@ from app.routers import matchmaking
 from app.core.auth_middleware import AuthMiddleware
 from app.routers import reports
 from app.routers import friend_request
-from app.routers import team_join, team
+from app.routers import team_join, team, team_invitation
 from app.routers import admin_users, admin_dashboard
 
 @asynccontextmanager
