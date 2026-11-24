@@ -14,7 +14,7 @@ from app import models  # noqa: F401 - import để SQLAlchemy biết các bản
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
 from app.core.limiter import limiter
-from app.db.session import Base, engine
+from app.db.session import Base, SessionLocal, engine
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.routers import auth, gamer_profile, notifications, posts, team_post, users
@@ -25,6 +25,7 @@ from app.routers import reports
 from app.routers import friend_request
 from app.routers import team_join, team, team_invitation
 from app.routers import admin_users
+from app.routers import chat
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -119,6 +120,11 @@ async def lifespan(app: FastAPI):
         print(
             f"[DB] Connected to MySQL {settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
         )
+        seed_db = SessionLocal()
+        try:
+            games.ensure_default_games_seeded(seed_db)
+        finally:
+            seed_db.close()
     except SQLAlchemyError as error:
         print("[DB] Could not initialize database tables. Check MySQL schema and .env.")
         print(f"[DB] SQLAlchemy error: {error}")
@@ -184,9 +190,11 @@ app.include_router(reports.public_router)
 app.include_router(reports.router)
 app.include_router(admin_users.router)
 app.include_router(team.router, prefix="/api")
+app.include_router(chat.router)
+app.include_router(chat.router, prefix="/api", include_in_schema=False)
+app.include_router(chat.ws_router)
 
 
 @app.get("/")
 def root():
     return {"message": f"{settings.APP_NAME} đang chạy. Xem tài liệu API tại /docs"}
-app.include_router(reports.public_router)

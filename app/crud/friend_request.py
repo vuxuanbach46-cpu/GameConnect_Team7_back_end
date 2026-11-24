@@ -16,6 +16,7 @@ from app.models.game import Game
 from app.models.game_rank import GameRank
 from app.models.game_role import GameRole
 from app.models.matchmaking import MatchRoom, MatchRoomMember, RoomStatus
+from app.models.direct_message import DirectMessage
 
 
 def check_block(db: Session, user_a: int, user_b: int):
@@ -619,6 +620,25 @@ def _get_real_user_card(
 
     primary_game = games_list[0] if games_list else None
 
+    # 5. Đếm số tin nhắn chưa đọc mà target_user gửi cho current_user_id
+    unread_messages_count = 0
+    if current_user_id != target_user.id:
+        try:
+            unread_messages_count = (
+                db.query(DirectMessage)
+                .filter(
+                    and_(
+                        DirectMessage.sender_id == target_user.id,
+                        DirectMessage.receiver_id == current_user_id,
+                        DirectMessage.is_read.is_(False),
+                    )
+                )
+                .count()
+            )
+        except Exception:
+            db.rollback()
+            unread_messages_count = 0
+
     return {
         "user_id": target_user.id,
         "username": target_user.username,
@@ -629,6 +649,7 @@ def _get_real_user_card(
         "has_mic": has_mic,
         "last_seen": target_user.last_seen,
         "mutual_friends_count": mutual_friends_count,
+        "unread_messages_count": unread_messages_count,
         "in_room": in_room,
         "room_info": room_info,
         "games": games_list,
