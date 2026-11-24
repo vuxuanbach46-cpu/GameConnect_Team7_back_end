@@ -219,6 +219,31 @@ def update_post_visibility(
     )
 
 
+@router.get("/comments/{comment_id}", summary="Chi tiết bình luận")
+def get_comment(
+    comment_id: int,
+    req: Request,
+    db: Session = Depends(get_db),
+):
+    comment = db.query(Comment).filter(Comment.id == comment_id).first()
+    if comment is None:
+        raise HTTPException(status_code=404, detail="Bình luận không tồn tại")
+    user = db.query(User).filter(User.id == comment.user_id).first()
+    return api_repoint(
+        req=req,
+        status_code=status.HTTP_200_OK,
+        message="Lấy bình luận thành công",
+        data={
+            "id": comment.id,
+            "post_id": comment.post_id,
+            "user_id": comment.user_id,
+            "username": user.username if user else "Người dùng",
+            "content": comment.content,
+            "created_at": comment.created_at,
+        },
+    )
+
+
 @router.delete("/comments/{comment_id}", summary="Xóa bình luận vi phạm")
 def delete_comment(
     comment_id: int,

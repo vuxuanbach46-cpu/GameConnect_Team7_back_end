@@ -1,9 +1,11 @@
 from fastapi import HTTPException
+from sqlalchemy import and_, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.team import Team, TeamJoinMode
 from app.models.team_member import TeamMember, TeamMemberRole
+from app.models.game import Game
 from app.models.team_join_request import (
     TeamJoinRequest,
     TeamJoinRequestStatus,
@@ -14,6 +16,49 @@ class TeamJoinError(HTTPException):
     def __init__(self, status_code: int, detail: str):
         super().__init__(status_code=status_code, detail=detail)
 
+
+
+def get_user_teams(db: Session, user_id: int):
+    """Danh sách các đội cố định mà người dùng đang là thành viên hoặc đội trưởng."""
+    rows = (
+        db.query(Team, Game, TeamMember)
+        .join(Game, Game.id == Team.main_game_id)
+        .outerjoin(
+            TeamMember,
+            and_(TeamMember.team_id == Team.id, TeamMember.user_id == user_id),
+        )
+        .filter(or_(Team.captain_id == user_id, TeamMember.user_id == user_id))
+        .order_by(Team.updated_at.desc(), Team.id.desc())
+        .all()
+    )
+
+    result = []
+    for team, game, member in rows:
+        member_count = db.query(TeamMember).filter(TeamMember.team_id == team.id).count()
+        captain_recorded = db.query(TeamMember.id).filter(
+            TeamMember.team_id == team.id,
+            TeamMember.user_id == team.captain_id,
+        ).first() is not None
+        if not captain_recorded:
+            member_count += 1
+
+        result.append({
+            "id": team.id,
+            "name": team.name,
+            "logo_url": team.logo_url,
+            "description": team.description,
+            "game_id": team.main_game_id,
+            "game_name": game.name,
+            "game_image": game.image,
+            "captain_id": team.captain_id,
+            "is_captain": team.captain_id == user_id,
+            "member_role": "CAPTAIN" if team.captain_id == user_id else (member.role.value if member else "MEMBER"),
+            "member_count": member_count,
+            "max_members": team.max_members,
+            "join_mode": team.join_mode.value,
+            "joined_at": (member.joined_at if member else team.created_at),
+        })
+    return result
 
 def join_team(
     db: Session,
