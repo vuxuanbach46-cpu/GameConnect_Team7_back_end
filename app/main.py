@@ -26,7 +26,7 @@ from app.core.auth_middleware import AuthMiddleware
 from app.routers import reports
 from app.routers import friend_request
 from app.routers import team_join, team
-from app.routers import admin_users
+from app.routers import admin_users, admin_dashboard
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -70,6 +70,17 @@ async def lifespan(app: FastAPI):
                         )
                     )
                     print("[DB] Added match_rooms.label column.")
+
+            if "match_room_members" in table_names_set:
+                mrm_cols = {
+                    column["name"]
+                    for column in inspect(connection).get_columns("match_room_members")
+                }
+                if "role_id" not in mrm_cols:
+                    connection.execute(
+                        text("ALTER TABLE match_room_members ADD COLUMN role_id INT NULL")
+                    )
+                    print("[DB] Added match_room_members.role_id column.")
 
             if "gamer_profiles" in table_names_set:
                 gp_cols = {
@@ -184,9 +195,11 @@ app.include_router(games.router)
 app.include_router(user_games.router)
 app.include_router(admin_games.router)
 app.include_router(team_join.router, prefix="/api")
+app.include_router(team_invitation.router)
 app.include_router(reports.public_router)
 app.include_router(reports.router)
 app.include_router(admin_users.router)
+app.include_router(admin_dashboard.router)
 app.include_router(team.router, prefix="/api")
 app.include_router(profile_search.router)
 
@@ -194,4 +207,3 @@ app.include_router(profile_search.router)
 @app.get("/")
 def root():
     return {"message": f"{settings.APP_NAME} đang chạy. Xem tài liệu API tại /docs"}
-app.include_router(reports.public_router)

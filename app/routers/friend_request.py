@@ -24,6 +24,10 @@ from app.crud.friend_request import (
     get_friends_list,
     get_mutual_friends,
     get_friend_suggestions,
+    block_user,
+    unblock_user,
+    get_blocked_users,
+    _get_real_user_card,
 )
 
 
@@ -33,12 +37,21 @@ router = APIRouter(
 )
 
 
-def format_request_list(results):
-    """Định dạng lời mời kèm thông tin người liên quan."""
+def format_request_list(
+    results,
+    db: Session | None = None,
+    current_user_id: int | None = None,
+):
+    """Định dạng lời mời kèm thông tin người liên quan (mở rộng đầy đủ thẻ người chơi)."""
 
     data = []
 
     for request, user in results:
+        card_info = (
+            _get_real_user_card(db, user, current_user_id)
+            if (db is not None and current_user_id is not None)
+            else {}
+        )
         data.append({
             "id": request.id,
             "sender_id": request.sender_id,
@@ -47,7 +60,8 @@ def format_request_list(results):
             "created_at": request.created_at,
             "user": {
                 "id": user.id,
-                "username": user.username
+                "username": user.username,
+                **card_info,
             }
         })
 
@@ -154,7 +168,7 @@ def list_sent_friend_requests(
         req=req,
         status_code=status.HTTP_200_OK,
         message="Danh sách lời mời kết bạn đã gửi",
-        data=format_request_list(results)
+        data=format_request_list(results, db=db, current_user_id=current_user.id)
     )
 
 
@@ -183,7 +197,7 @@ def list_received_friend_requests(
         req=req,
         status_code=status.HTTP_200_OK,
         message="Danh sách lời mời kết bạn đã nhận",
-        data=format_request_list(results)
+        data=format_request_list(results, db=db, current_user_id=current_user.id)
     )
 
 
@@ -325,19 +339,112 @@ def list_mutual_friends(
 def list_friend_suggestions(
     req: Request,
     limit: int = Query(default=20, ge=1, le=100, description="Số lượng người gợi ý tối đa"),
+    q: Optional[str] = Query(
+        default=None,
+        description="Từ khóa tìm kiếm username, display_name hoặc in_game_id",
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Gợi ý kết bạn thông minh hiển thị ở tab GỢI Ý KẾT BẠN trên trang Bạn bè:
     - Thuật toán ưu tiên người có bạn chung và người cùng chơi các tựa game.
+    - Hỗ trợ tìm kiếm người chơi toàn hệ thống theo từ khóa `q`.
     - Loại trừ chính mình, những người đã là bạn bè, lời mời đang chờ và người bị chặn.
     - Trả về: bạn chung, mẫu tên bạn chung, các game cùng chơi và lý do gợi ý.
     """
-    data = get_friend_suggestions(db=db, current_user_id=current_user.id, limit=limit)
+    data = get_friend_suggestions(db=db, current_user_id=current_user.id, limit=limit, q=q)
     return api_repoint(
         req=req,
         status_code=status.HTTP_200_OK,
         message="Lấy danh sách gợi ý kết bạn thành công",
         data=data,
     )
+
+
+# ===========================================================================
+# Chặn & Bỏ chặn bạn bè / người dùng (Block & Unblock)
+# ===========================================================================
+
+@router.get("/blocks", summary="Xem danh sách người dùng đã chặn")
+def list_blocked_users(
+    req: Request,
+    skip: int = Query(default=0, ge=0, description="Số bản ghi bỏ qua"),
+    limit: int = Query(default=50, ge=1, le=100, description="Số lượng tối đa"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Lấy danh sách tất cả những người dùng mà bạn đang chặn."""
+    data = get_blocked_users(db=db, current_user=current_user, skip=skip, limit=limit)
+    return api_repoint(
+        req=req,
+        status_code=status.HTTP_200_OK,
+        message="Danh sách người dùng đã chặn",
+        data=data,
+    )
+
+
+@router.post(
+    "/blocks/{target_user_id}",
+    status_code=status.HTTP_201_CREATED,
+    summary="Chặn bạn bè / người dùng (Block)",
+)
+@router.post(
+    "/block/{target_user_id}",
+    status_code=status.HTTP_201_CREATED,
+    summary="Chặn bạn bè / người dùng (Alias)",
+    include_in_schema=False,
+)
+def create_block_user(
+    target_user_id: int,
+    req: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Chặn một người dùng hoặc bạn bè:
+    - Tự động hủy kết bạn nếu hai người đang là bạn bè.
+    - Tự động xóa mọi lời mời kết bạn đang chờ giữa hai người.
+    - Không thể gửi/nhận lời mời kết bạn hoặc ghép đội chung khi đang chặn.
+    """
+    result = block_user(db=db, current_user=current_user, target_user_id=target_user_id)
+    response.status_code = status.HTTP_201_CREATED
+    return api_repoint(
+        req=req,
+        status_code=status.HTTP_201_CREATED,
+        message=f"Đã chặn {result['blocked_username']} thành công",
+        data=result,
+    )
+
+
+@router.delete(
+    "/blocks/{target_user_id}",
+    summary="Bỏ chặn bạn bè / người dùng (Unblock)",
+)
+@router.delete(
+    "/block/{target_user_id}",
+    summary="Bỏ chặn bạn bè / người dùng (Alias)",
+    include_in_schema=False,
+)
+def remove_block_user(
+    target_user_id: int,
+    req: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Bỏ chặn một người dùng đã bị chặn trước đó."""
+    unblocked_user = unblock_user(
+        db=db,
+        current_user=current_user,
+        target_user_id=target_user_id,
+    )
+    return api_repoint(
+        req=req,
+        status_code=status.HTTP_200_OK,
+        message=f"Đã bỏ chặn {unblocked_user.username} thành công",
+        data={
+            "unblocked_user_id": unblocked_user.id,
+            "unblocked_username": unblocked_user.username,
+        },
+    )
+
 

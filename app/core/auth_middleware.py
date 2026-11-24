@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Callable
 
 from fastapi.encoders import jsonable_encoder
@@ -13,6 +14,7 @@ from app.core.config import settings
 from app.db.session import SessionLocal
 from sqlalchemy.orm import Session
 from app.models.revoked_token import RevokedToken
+from app.models.user import User
 
 
 def _auth_error(request: Request, message: str) -> JSONResponse:
@@ -39,6 +41,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
         self, request: Request, call_next: Callable[[Request], Response]
     ) -> Response:
         request.state.user_id = None
+
+        if request.method == "OPTIONS":
+            return await call_next(request)
 
         path = request.url.path.rstrip("/")
         if any(
@@ -96,6 +101,15 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 return _auth_error(request, "Access Token đã bị thu hồi")
 
             request.state.user_id = user_id
+
+            try:
+                db.query(User).filter(User.id == user_id).update(
+                    {User.last_seen: datetime.now()},
+                    synchronize_session=False,
+                )
+                db.commit()
+            except Exception:
+                db.rollback()
 
         except ExpiredSignatureError:
             return _auth_error(request, "Token hết hạn")
