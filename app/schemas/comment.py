@@ -18,6 +18,9 @@ class CommentOut(BaseModel):
     id: int
     post_id: int
     user_id: int
+    author_name: str | None = None
+    author_username: str | None = None
+    author_avatar: str | None = None
     content: str
     parent_comment_id: int | None
     created_at: datetime

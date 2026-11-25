@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import and_, func
 from fastapi import HTTPException
 
 from app.models.team import Team, TeamJoinMode
@@ -13,6 +13,7 @@ from app.schemas.team import (
     TeamUpdateRequest,
     JoinRequestStatusAction,
     TransferCaptainRequest,
+    TeamResponse,
 )
 from app.crud.notification import create_notification
 from sqlalchemy.exc import IntegrityError
@@ -171,9 +172,9 @@ def update_team_service(
     if "max_members" in update_data:
         max_members = update_data["max_members"]
 
-        if max_members < 1 or max_members > 100:
+        if max_members < 2 or max_members > 100:
             raise HTTPException(
-                status_code=400, detail="Số thành viên tối đa phải từ 1 đến 100"
+                status_code=400, detail="Số thành viên tối đa phải từ 2 đến 100"
             )
 
         current_members = (
@@ -251,6 +252,7 @@ def get_teams_service(
     db: Session,
     keyword: str = None,
     game_id: int = None,
+    join_mode: TeamJoinMode | None = None,
     page: int = 1,
     page_size: int = 10,
 ):
@@ -282,6 +284,12 @@ def get_teams_service(
         if not game:
             raise HTTPException(status_code=404, detail="Game không tồn tại")
 
+    if join_mode is not None and not isinstance(join_mode, TeamJoinMode):
+        try:
+            join_mode = TeamJoinMode(join_mode)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Chế độ tham gia không hợp lệ") from exc
+
     # 4. Khởi tạo truy vấn
     query = db.query(Team)
 
@@ -293,6 +301,9 @@ def get_teams_service(
     if game_id is not None:
         query = query.filter(Team.main_game_id == game_id)
 
+    if join_mode is not None:
+        query = query.filter(Team.join_mode == join_mode)
+
     # 7. Đếm tổng số đội thỏa mãn điều kiện
     total = query.count()
 
@@ -300,16 +311,43 @@ def get_teams_service(
     total_pages = (total + page_size - 1) // page_size if total > 0 else 0
 
     # 9. Lấy danh sách đội theo trang
-    teams = (
-        query.order_by(Team.created_at.desc(), Team.id.desc())
+    member_counts = (
+        db.query(TeamMember.team_id.label("team_id"), func.count(TeamMember.id).label("member_count"))
+        .group_by(TeamMember.team_id)
+        .subquery()
+    )
+    captain_counts = (
+        db.query(TeamMember.team_id.label("team_id"), func.count(TeamMember.id).label("captain_count"))
+        .join(Team, and_(Team.id == TeamMember.team_id, Team.captain_id == TeamMember.user_id))
+        .group_by(TeamMember.team_id)
+        .subquery()
+    )
+    rows = (
+        query.with_entities(
+            Team,
+            Game.name.label("game_name"),
+            func.coalesce(member_counts.c.member_count, 0).label("member_count"),
+            func.coalesce(captain_counts.c.captain_count, 0).label("captain_count"),
+        )
+        .join(Game, Game.id == Team.main_game_id)
+        .outerjoin(member_counts, member_counts.c.team_id == Team.id)
+        .outerjoin(captain_counts, captain_counts.c.team_id == Team.id)
+        .order_by(Team.created_at.desc(), Team.id.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()
     )
 
+    items = []
+    for team, game_name, member_count, captain_count in rows:
+        item = TeamResponse.model_validate(team).model_dump(mode="json")
+        item["game_name"] = game_name
+        item["member_count"] = int(member_count or 0) + (0 if captain_count else 1)
+        items.append(item)
+
     # 10. Trả kết quả
     return {
-        "items": teams,
+        "items": items,
         "total": total,
         "page": page,
         "page_size": page_size,

@@ -176,6 +176,7 @@ def refresh_access_token(
             access_token,
             settings.SECRET_KEY,
             algorithms=[settings.JWT_ALGORITHM],
+            options={"verify_exp": False},
         )
 
         # Giải mã Refresh Token cũ
