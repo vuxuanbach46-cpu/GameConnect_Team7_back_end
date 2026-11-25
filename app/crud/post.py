@@ -1,4 +1,3 @@
-import re
 from datetime import datetime, timedelta
 
 from sqlalchemy import and_, exists, func, or_, select
@@ -12,6 +11,24 @@ from app.models.post import Post
 from app.models.post_like import PostLike
 from app.models.post_game import PostGame
 from app.schemas.post import PostCreate, PostUpdate
+
+
+GAME_HASHTAG_ALIASES = {
+    "counter-strike 2": ["counter-strike 2", "counter strike 2", "cs2"],
+    "league of legends": ["league of legends", "liên minh huyền thoại", "lol"],
+}
+
+
+def _normalize_hashtag(value: str) -> str:
+    return " ".join(value.strip().lstrip("#").casefold().split())
+
+
+def _game_names_for_hashtag(hashtag: str) -> list[str]:
+    normalized = _normalize_hashtag(hashtag)
+    aliases = GAME_HASHTAG_ALIASES.get(normalized)
+    if aliases:
+        return aliases
+    return [normalized]
 
 
 def _visible_posts_query(
@@ -44,6 +61,29 @@ def _visible_posts_query(
 
 def _escape_like(value: str) -> str:
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _hashtag_matches(content: str, hashtag: str) -> bool:
+    normalized_content = content.casefold()
+    normalized_hashtag = hashtag.strip().lstrip("#").casefold()
+    if not normalized_hashtag:
+        return False
+
+    marker = f"#{normalized_hashtag}"
+    start = 0
+    while True:
+        position = normalized_content.find(marker, start)
+        if position < 0:
+            return False
+
+        before = normalized_content[position - 1] if position > 0 else ""
+        end = position + len(marker)
+        after = normalized_content[end] if end < len(normalized_content) else ""
+        before_is_word = before.isalnum() or before == "_"
+        after_is_word = after.isalnum() or after == "_"
+        if not before_is_word and not after_is_word:
+            return True
+        start = position + 1
 
 
 def get_posts(db: Session, skip: int = 0, limit: int = 20) -> list[Post]:
@@ -160,14 +200,62 @@ def search_posts(
 ) -> list[Post]:
     query = _visible_posts_query(db, current_user_id)
     if keyword:
-        query = query.filter(
-            Post.content.ilike(f"%{_escape_like(keyword)}%", escape="\\")
+        content_match = Post.content.ilike(
+            f"%{_escape_like(keyword.lstrip('#'))}%",
+            escape="\\",
         )
+        game_aliases = _game_names_for_hashtag(keyword)
+        game_alias_conditions = [
+            func.lower(Game.name).ilike(
+                f"%{_escape_like(alias).lower()}%",
+                escape="\\",
+            )
+            for alias in game_aliases
+        ]
+        game_match = exists(
+            select(PostGame.post_id).join(
+                Game,
+                Game.id == PostGame.game_id,
+            ).where(
+                PostGame.post_id == Post.id,
+                or_(*game_alias_conditions),
+            )
+        )
+        query = query.filter(or_(content_match, game_match))
     if hashtag:
-        hashtag_pattern = (
-            rf"(^|[^\w])#{re.escape(hashtag.lstrip('#')).lower()}(?!\w)"
+        normalized_hashtag = hashtag.strip().lstrip("#")
+        game_aliases = _game_names_for_hashtag(normalized_hashtag)
+        game_alias_conditions = [
+            func.lower(Game.name).ilike(
+                f"%{_escape_like(alias).lower()}%",
+                escape="\\",
+            )
+            for alias in game_aliases
+        ]
+        game_match = (
+            exists(
+                select(PostGame.post_id).join(
+                    Game,
+                    Game.id == PostGame.game_id,
+                ).where(
+                    PostGame.post_id == Post.id,
+                    or_(*game_alias_conditions),
+                )
+            )
         )
-        query = query.filter(func.lower(Post.content).regexp_match(hashtag_pattern))
+        content_match = Post.content.ilike(
+            f"%#{_escape_like(normalized_hashtag)}%",
+            escape="\\",
+        )
+        query = query.filter(or_(content_match, game_match))
+        posts = (
+            query.order_by(Post.created_at.desc(), Post.id.desc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+        return posts
+
     return (
         query.order_by(Post.created_at.desc(), Post.id.desc())
         .offset(skip)
