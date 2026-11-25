@@ -34,6 +34,7 @@ SOURCE ./match_queue.sql;
 SOURCE ./teams.sql;
 SOURCE ./team_members.sql;
 SOURCE ./team_join_requests.sql;
+SOURCE ./team_feed_posts.sql;
 SOURCE ./team_invitations.sql;
 
 SET FOREIGN_KEY_CHECKS = 1;
