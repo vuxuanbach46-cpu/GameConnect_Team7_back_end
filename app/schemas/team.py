@@ -23,7 +23,9 @@ class TeamCreateRequest(BaseModel):
 
     description: Optional[str] = None
 
-    max_members: int = Field(default=5, ge=2, le=100)
+    # Câu lạc bộ mặc định chứa tối đa 100 người; vẫn cho phép chủ câu lạc bộ
+    # đặt giới hạn thấp hơn nhưng không thể vượt quá giới hạn này.
+    max_members: int = Field(default=100, ge=2, le=100)
 
     join_mode: TeamJoinModeSchema = TeamJoinModeSchema.PUBLIC
 

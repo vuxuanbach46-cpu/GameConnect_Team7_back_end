@@ -24,3 +24,5 @@ from app.models.password_reset_token import PasswordResetToken  # noqa: F401
 from app.models.matchmaking import MatchRoom, MatchRoomMember, MatchQueue  # noqa: F401
 
 from app.models.team_invitation import TeamInvitation  # noqa: F401
+from app.models.direct_message import DirectMessage  # noqa: F401
+

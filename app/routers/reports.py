@@ -35,6 +35,71 @@ TARGET_MODELS = {
     ReportTargetType.TEAM_POST: TeamPost,
 }
 
+@public_router.post(
+    "",
+    summary="Báo cáo tài khoản, bài viết, bình luận hoặc bài tìm đội",
+    status_code=status.HTTP_201_CREATED,
+)
+def submit_report(
+    req: Request,
+    info: ReportCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    target_model = TARGET_MODELS.get(info.target_type)
+    if not target_model:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Loại đối tượng không hợp lệ",
+        )
+    target = db.query(target_model).filter(target_model.id == info.target_id).first()
+
+    if target is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Đối tượng cần báo cáo không tồn tại",
+        )
+
+    if info.target_type == ReportTargetType.USER and info.target_id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Bạn không thể báo cáo chính tài khoản của mình",
+        )
+
+    existed = db.query(Report).filter(
+        Report.reporter_id == current_user.id,
+        Report.target_type == info.target_type.value,
+        Report.target_id == info.target_id,
+    ).first()
+    if existed:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Bạn đã báo cáo đối tượng này rồi",
+        )
+
+    try:
+        report = create_report(
+            db=db,
+            reporter_id=current_user.id,
+            target_type=info.target_type.value,
+            target_id=info.target_id,
+            reason=info.reason.value,
+            description=info.description,
+        )
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Bạn đã báo cáo đối tượng này rồi",
+        )
+
+    return api_repoint(
+        req=req,
+        status_code=status.HTTP_201_CREATED,
+        message="Gửi báo cáo thành công",
+        data=report_data(report, current_user),
+    )
+
 router = APIRouter(
     prefix="/api/admin",
     tags=["Admin - Content Moderation"],
