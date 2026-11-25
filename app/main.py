@@ -25,7 +25,7 @@ from app.routers import matchmaking
 from app.core.auth_middleware import AuthMiddleware
 from app.routers import reports
 from app.routers import friend_request
-from app.routers import team_join, team, team_invitation
+from app.routers import team_join, team, team_invitation, team_feed
 from app.routers import admin_users, admin_dashboard
 
 @asynccontextmanager
@@ -195,6 +195,7 @@ app.include_router(games.router)
 app.include_router(user_games.router)
 app.include_router(admin_games.router)
 app.include_router(team_join.router, prefix="/api")
+app.include_router(team_feed.router)
 app.include_router(team_invitation.router)
 app.include_router(reports.public_router)
 app.include_router(reports.router)
