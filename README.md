@@ -220,3 +220,8 @@ Chỉ dành cho bạn nào đã biết Docker và không muốn cài MySQL. Tron
 Chạy `sql/team_invitations.sql` trên cơ sở dữ liệu hiện có (hoặc bổ sung bảng bằng `sql/run_all.sql` khi khởi tạo mới). Đội trưởng có thể mời game thủ từ hồ sơ trong trang Bạn bè; người nhận mở **Lời mời vào đội** để chấp nhận hoặc từ chối. Backend kiểm tra quyền đội trưởng, quan hệ chặn, số chỗ còn lại và quyền phản hồi; lời mời và thông báo được lưu trong cơ sở dữ liệu.
 
 API yêu cầu Bearer access token: `GET /api/team-invitations/captain-teams`, `POST /api/team-invitations` với `team_id` và `user_id`, `GET /api/team-invitations/me`, và `PATCH /api/team-invitations/{id}` với `action` là `accept` hoặc `reject`. Chạy kiểm thử bằng `python -m unittest discover -s tests -p test_team_invitations.py -v`.
+
+
+### Bảng tin nội bộ đội
+
+Với cơ sở dữ liệu đã tồn tại, chạy `sql/team_feed_posts.sql` để tạo bảng bảng tin. Đội trưởng có thể đăng thông báo và lịch chơi; chỉ thành viên của đội được xem. API dùng access token qua các đường dẫn `GET /api/teams/{team_id}/join-requests`, `GET /api/teams/{team_id}/feed` và `POST /api/teams/{team_id}/feed`. Danh mục game có thể khởi tạo bằng `sql/seed_games_data.sql` nếu cơ sở dữ liệu chưa có game.

@@ -8,6 +8,7 @@ from sqlalchemy import func, or_
 from app.models.team import Team, TeamJoinMode
 from app.models.team_member import TeamMember
 from app.models.game import Game
+from app.models.team_join_request import TeamJoinRequest, TeamJoinRequestStatus
 
 from app.db.session import get_db
 from app.core.security import get_current_user, get_optional_user
@@ -158,6 +159,17 @@ def get_my_teams(req: Request, db: Session = Depends(get_db), current_user: User
              "members": count or 0, "maxMembers": team.max_members}
             for team, game, count in rows]
     return success_response(req, 200, "Lấy danh sách đội thành công", data)
+
+
+@router.get("/{team_id}/join-requests", response_model=APIRepoint, summary="Yêu cầu tham gia đang chờ")
+def get_pending_requests(team_id: int, req: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    team = db.query(Team).filter_by(id=team_id).first()
+    if not team: raise HTTPException(404, "Không tìm thấy đội")
+    if team.captain_id != current_user.id: raise HTTPException(403, "Chỉ đội trưởng mới xem được yêu cầu")
+    rows = (db.query(TeamJoinRequest, User).join(User, User.id == TeamJoinRequest.user_id)
+            .filter(TeamJoinRequest.team_id == team_id, TeamJoinRequest.status == TeamJoinRequestStatus.PENDING)
+            .order_by(TeamJoinRequest.created_at).all())
+    return success_response(req, 200, "Lấy yêu cầu thành công", [{"id":r.id,"user_id":u.id,"username":u.username,"message":r.message} for r, u in rows])
 
 
 @router.get(
