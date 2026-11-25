@@ -271,6 +271,14 @@ def _is_label_compatible(user_label: str | None, room_label: str | None) -> tupl
 
 def create_or_get_lobby(db: Session, user_id: int, data: CreateLobbyRequest | CreateMatchRoomRequest) -> MatchRoomOut:
     """Tạo mới hoặc lấy sảnh đội hiện tại của người dùng."""
+    # Kiểm tra Game trước
+    game = db.get(Game, data.game_id)
+    if not game:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Game id={data.game_id} không tồn tại trong hệ thống."
+        )
+
     # Kiểm tra xem người này có đang ở sảnh WAITING nào không
     existing_member = db.scalar(
         select(MatchRoomMember)
@@ -294,14 +302,6 @@ def create_or_get_lobby(db: Session, user_id: int, data: CreateLobbyRequest | Cr
             db.commit()
             db.refresh(room)
         return _enrich_room_detail(db, room, current_user_id=user_id)
-
-    # Kiểm tra Game
-    game = db.get(Game, data.game_id)
-    if not game:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Game id={data.game_id} không tồn tại trong hệ thống."
-        )
 
     # Kiểm tra Rank
     min_rank_id = data.min_rank_id if (data.min_rank_id and data.min_rank_id > 0) else None
@@ -559,6 +559,12 @@ def accept_lobby_invite(db: Session, user_id: int, room_id: int) -> MatchRoomOut
 def find_match(db: Session, user_id: int, data: FindMatchRequest | QuickMatchRequest) -> QuickMatchResponse:
     """Nút cam FIND MATCH: Tự động gom người lẻ và các nhóm (3+2=5, 4+1=5...) thành 1 phòng."""
     game_id = data.game_id
+    game = db.get(Game, game_id)
+    if not game:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Game id={game_id} không tồn tại trong hệ thống."
+        )
 
     # 1. Kiểm tra xem người dùng đang có sảnh WAITING nào không
     member = db.scalar(
@@ -580,16 +586,12 @@ def find_match(db: Session, user_id: int, data: FindMatchRequest | QuickMatchReq
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Bạn đang ở trong một đội. Chỉ có trưởng nhóm mới có quyền bấm Tìm trận!"
             )
-        if data.label:
+        my_room.game_id = game_id
+        if data.label is not None:
             my_room.label = _normalize_label(data.label)
+        db.flush()
     else:
         # Người đi một mình (solo) chưa tạo sảnh -> Tự động sinh sảnh 1 người
-        game = db.get(Game, game_id)
-        if not game:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Game id={game_id} không tồn tại trong hệ thống."
-            )
         user = db.get(User, user_id)
         username = user.username if user else "Người chơi"
 
@@ -785,18 +787,31 @@ def cancel_search(db: Session, user_id: int) -> dict:
 # ===========================================================================
 
 def get_my_current_room(db: Session, user_id: int) -> MyRoomResponse:
-    """Xem sảnh/phòng hiện tại của người dùng đang đăng nhập."""
+    """Xem sảnh/phòng hiện tại của người dùng đang đăng nhập (ưu tiên phòng WAITING)."""
+    # Ưu tiên lấy phòng WAITING đang mở trước để không bị phòng cũ đã kết thúc ghi đè game
     member = db.scalar(
         select(MatchRoomMember)
         .join(MatchRoom, MatchRoomMember.room_id == MatchRoom.id)
         .where(
             and_(
                 MatchRoomMember.user_id == user_id,
-                MatchRoom.status != RoomStatus.CANCELLED,
+                MatchRoom.status == RoomStatus.WAITING,
             )
         )
-        .order_by(MatchRoom.created_at.desc())
+        .order_by(MatchRoom.updated_at.desc(), MatchRoom.created_at.desc())
     )
+    if not member:
+        member = db.scalar(
+            select(MatchRoomMember)
+            .join(MatchRoom, MatchRoomMember.room_id == MatchRoom.id)
+            .where(
+                and_(
+                    MatchRoomMember.user_id == user_id,
+                    MatchRoom.status == RoomStatus.FULL,
+                )
+            )
+            .order_by(MatchRoom.updated_at.desc(), MatchRoom.created_at.desc())
+        )
     if not member:
         return MyRoomResponse(
             in_room=False,
