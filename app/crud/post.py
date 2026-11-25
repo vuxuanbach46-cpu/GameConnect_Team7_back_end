@@ -71,7 +71,7 @@ def get_visible_posts(db: Session, skip: int = 0, limit: int = 20) -> list[Post]
 
 def get_feed_posts(
     db: Session,
-    current_user_id: int,
+    current_user_id: int | None,
     game_id: int | None = None,
     user_id: int | None = None,
     friends_only: bool = False,
