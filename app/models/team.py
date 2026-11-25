@@ -69,7 +69,7 @@ class Team(Base):
     max_members = Column(
         Integer,
         nullable=False,
-        default=5,
+        default=100,
     )
     join_mode = Column(
         SQLEnum(TeamJoinMode),
