@@ -5,7 +5,7 @@ from fastapi.encoders import jsonable_encoder
 
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
-from app.models.team import Team
+from app.models.team import Team, TeamJoinMode
 from app.models.team_member import TeamMember
 from app.models.game import Game
 
@@ -122,13 +122,14 @@ def get_teams(
     req: Request,
     keyword: str = Query(default=None, max_length=100),
     game_id: int = Query(default=None, gt=0),
+    join_mode: TeamJoinMode | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=10, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
     try:
         result = get_teams_service(
-            db=db, keyword=keyword, game_id=game_id, page=page, page_size=page_size
+            db=db, keyword=keyword, game_id=game_id, join_mode=join_mode, page=page, page_size=page_size
         )
 
         return success_response(
