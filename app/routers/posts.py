@@ -1,13 +1,28 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from pathlib import Path
+
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 from sqlalchemy.orm import Session
 
 from app.core.security import get_admin_user, get_current_user, get_optional_user
 from app.crud import comment as comment_crud
+from app.crud.image_upload import save_uploaded_image
 from app.crud import post as post_crud
 from app.crud import post_like as post_like_crud
 from app.db.session import get_db
 from app.models.comment import Comment
+from app.models.gamer_profile import GamerProfile
 from app.models.post import Post
+from app.models.post_like import PostLike
 from app.models.user import User
 from app.schemas.api_response import api_repoint
 from app.schemas.comment import CommentCreate, CommentOut, CommentUpdate
@@ -15,13 +30,67 @@ from app.schemas.post import PostCreate, PostOut, PostUpdate
 from app.schemas.post_like import PostLikeOut
 
 router = APIRouter(prefix="/posts", tags=["Posts"])
+POST_IMAGE_DIR = Path(__file__).resolve().parent.parent / "uploads" / "posts"
 
 
-def _post_response(post: Post, like_count: int, comment_count: int) -> PostOut:
+def _author_data_map(db: Session, user_ids: set[int]) -> dict[int, dict]:
+    if not user_ids:
+        return {}
+    rows = (
+        db.query(
+            User.id,
+            User.username,
+            GamerProfile.display_name,
+            GamerProfile.avatar,
+        )
+        .outerjoin(GamerProfile, GamerProfile.user_id == User.id)
+        .filter(User.id.in_(user_ids))
+        .all()
+    )
+    return {
+        row.id: {
+            "username": row.username,
+            "display_name": row.display_name,
+            "avatar": row.avatar,
+        }
+        for row in rows
+    }
+
+
+def _comment_responses(db: Session, comments: list[Comment]) -> list[dict]:
+    authors = _author_data_map(db, {comment.user_id for comment in comments})
+    results = []
+    for comment in comments:
+        author = authors.get(comment.user_id, {})
+        result = CommentOut.model_validate(comment).model_dump(mode="json")
+        result.update(
+            author_name=author.get("display_name") or author.get("username") or f"Game thủ #{comment.user_id}",
+            author_username=author.get("username"),
+            author_avatar=author.get("avatar"),
+        )
+        results.append(result)
+    return results
+
+
+def _post_response(
+    db: Session,
+    post: Post,
+    like_count: int,
+    comment_count: int,
+    author_data: dict | None = None,
+    liked_by_current_user: bool = False,
+) -> PostOut:
     image_urls = post.image_urls or ([post.image_url] if post.image_url else [])
+    if author_data is None:
+        author_data = _author_data_map(db, {post.user_id}).get(post.user_id, {})
+    username = author_data.get("username")
     return PostOut(
         id=post.id,
         user_id=post.user_id,
+        author_name=author_data.get("display_name") or username or f"Game thủ #{post.user_id}",
+        author_username=username,
+        author_handle=f"@{username}" if username else f"@user{post.user_id}",
+        author_avatar=author_data.get("avatar"),
         content=post.content,
         image_url=post.image_url,
         image_urls=image_urls,
@@ -31,15 +100,38 @@ def _post_response(post: Post, like_count: int, comment_count: int) -> PostOut:
         updated_at=post.updated_at,
         like_count=like_count,
         comment_count=comment_count,
+        liked_by_current_user=liked_by_current_user,
     )
 
 
 def _post_list_response(
-    req: Request, db: Session, posts: list[Post], message: str
+    req: Request,
+    db: Session,
+    posts: list[Post],
+    message: str,
+    current_user_id: int | None = None,
 ):
     counts = post_crud.get_post_counts_by_id(db, [post.id for post in posts])
+    authors = _author_data_map(db, {post.user_id for post in posts})
+    liked_ids = set()
+    if current_user_id is not None and posts:
+        liked_ids = {
+            row[0]
+            for row in db.query(PostLike.post_id)
+            .filter(
+                PostLike.user_id == current_user_id,
+                PostLike.post_id.in_([post.id for post in posts]),
+            )
+            .all()
+        }
     results = [
-        _post_response(post, *counts[post.id]).model_dump(mode="json")
+        _post_response(
+            db,
+            post,
+            *counts[post.id],
+            author_data=authors.get(post.user_id, {}),
+            liked_by_current_user=post.id in liked_ids,
+        ).model_dump(mode="json")
         for post in posts
     ]
     return api_repoint(
@@ -83,6 +175,21 @@ def _comment_or_404(db: Session, post_id: int, comment_id: int) -> Comment:
     return comment
 
 
+@router.post("/images", status_code=status.HTTP_201_CREATED, summary="Tải ảnh bài viết lên")
+async def upload_post_image(
+    req: Request,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
+    filename = await save_uploaded_image(file, POST_IMAGE_DIR)
+    return api_repoint(
+        req=req,
+        status_code=status.HTTP_201_CREATED,
+        message="Tải ảnh lên thành công",
+        data={"image_url": f"/uploads/posts/{filename}"},
+    )
+
+
 @router.post("", status_code=status.HTTP_201_CREATED, summary="Tạo bài viết")
 def create_post(
     req: Request,
@@ -96,7 +203,7 @@ def create_post(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
         ) from error
-    result = _post_response(post, 0, 0)
+    result = _post_response(db, post, 0, 0, liked_by_current_user=False)
     return api_repoint(
         req=req,
         status_code=status.HTTP_201_CREATED,
@@ -118,14 +225,20 @@ def list_posts(
 ):
     posts = post_crud.get_feed_posts(
         db,
-        current_user_id=current_user.id,
+        current_user_id=current_user.id if current_user else None,
         game_id=game_id,
         user_id=user_id,
         friends_only=friends_only,
         skip=skip,
         limit=limit,
     )
-    return _post_list_response(req, db, posts, "Lấy danh sách bài viết thành công")
+    return _post_list_response(
+        req,
+        db,
+        posts,
+        "Lấy danh sách bài viết thành công",
+        current_user_id=current_user.id if current_user else None,
+    )
 
 
 @router.get("/featured", summary="Bài viết nổi bật trong 7 ngày")
@@ -142,7 +255,13 @@ def list_featured_posts(
         skip=skip,
         limit=limit,
     )
-    return _post_list_response(req, db, posts, "Lấy bài viết nổi bật thành công")
+    return _post_list_response(
+        req,
+        db,
+        posts,
+        "Lấy bài viết nổi bật thành công",
+        current_user_id=current_user.id if current_user else None,
+    )
 
 
 @router.get("/search", summary="Tìm kiếm bài viết")
@@ -170,7 +289,13 @@ def search_posts(
         skip=skip,
         limit=limit,
     )
-    return _post_list_response(req, db, posts, "Tìm kiếm bài viết thành công")
+    return _post_list_response(
+        req,
+        db,
+        posts,
+        "Tìm kiếm bài viết thành công",
+        current_user_id=current_user.id if current_user else None,
+    )
 
 
 @router.get("/{post_id}", summary="Chi tiết bài viết")
@@ -182,7 +307,19 @@ def read_post(
 ):
     post = _post_or_404(db, post_id)
     like_count, comment_count = post_crud.get_post_counts(db, post_id)
-    result = _post_response(post, like_count, comment_count)
+    liked = False
+    if current_user:
+        liked = db.query(PostLike.id).filter(
+            PostLike.post_id == post_id,
+            PostLike.user_id == current_user.id,
+        ).first() is not None
+    result = _post_response(
+        db,
+        post,
+        like_count,
+        comment_count,
+        liked_by_current_user=liked,
+    )
     return api_repoint(
         req=req,
         status_code=status.HTTP_200_OK,
@@ -212,7 +349,13 @@ def update_post(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
         ) from error
     like_count, comment_count = post_crud.get_post_counts(db, post_id)
-    result = _post_response(post, like_count, comment_count)
+    liked = db.query(PostLike.id).filter(
+        PostLike.post_id == post_id,
+        PostLike.user_id == current_user.id,
+    ).first() is not None
+    result = _post_response(
+        db, post, like_count, comment_count, liked_by_current_user=liked
+    )
     return api_repoint(
         req=req,
         status_code=status.HTTP_200_OK,
@@ -257,10 +400,7 @@ def list_comments(
         req=req,
         status_code=status.HTTP_200_OK,
         message="Lấy danh sách bình luận thành công",
-        data=[
-            CommentOut.model_validate(comment).model_dump(mode="json")
-            for comment in comments
-        ],
+        data=_comment_responses(db, comments),
     )
 
 
@@ -287,7 +427,7 @@ def create_comment(
         req=req,
         status_code=status.HTTP_201_CREATED,
         message="Thêm bình luận thành công",
-        data=CommentOut.model_validate(comment).model_dump(mode="json"),
+        data=_comment_responses(db, [comment])[0],
     )
 
 
@@ -314,7 +454,7 @@ def edit_comment(
         req=req,
         status_code=status.HTTP_200_OK,
         message="Cập nhật bình luận thành công",
-        data=CommentOut.model_validate(comment).model_dump(mode="json"),
+        data=_comment_responses(db, [comment])[0],
     )
 
 

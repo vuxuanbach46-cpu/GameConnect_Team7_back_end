@@ -4,6 +4,7 @@ import enum
 from sqlalchemy import (
     Column,
     BigInteger,
+    Integer,
     DateTime,
     ForeignKey,
     Enum as SQLEnum,
@@ -36,7 +37,7 @@ class TeamMember(Base):
     )
 
     id = Column(
-        BigInteger,
+        BigInteger().with_variant(Integer, "sqlite"),
         primary_key=True,
         index=True,
         autoincrement=True,

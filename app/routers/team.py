@@ -4,6 +4,10 @@ from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 
 from sqlalchemy.orm import Session
+from sqlalchemy import func, or_
+from app.models.team import Team, TeamJoinMode
+from app.models.team_member import TeamMember
+from app.models.game import Game
 
 from app.db.session import get_db
 from app.core.security import get_current_user, get_optional_user
@@ -118,13 +122,14 @@ def get_teams(
     req: Request,
     keyword: str = Query(default=None, max_length=100),
     game_id: int = Query(default=None, gt=0),
+    join_mode: TeamJoinMode | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=10, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
     try:
         result = get_teams_service(
-            db=db, keyword=keyword, game_id=game_id, page=page, page_size=page_size
+            db=db, keyword=keyword, game_id=game_id, join_mode=join_mode, page=page, page_size=page_size
         )
 
         return success_response(
@@ -136,6 +141,23 @@ def get_teams(
 
     except HTTPException as exc:
         return error_response(req, exc)
+
+
+@router.get("/mine", response_model=APIRepoint, summary="Danh sách đội của người đăng nhập")
+def get_my_teams(req: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    member_counts = (db.query(TeamMember.team_id, func.count(TeamMember.user_id).label("count"))
+                     .group_by(TeamMember.team_id).subquery())
+    membership = db.query(TeamMember.team_id).filter(TeamMember.user_id == current_user.id)
+    rows = (db.query(Team, Game.name, member_counts.c.count)
+            .join(Game, Game.id == Team.main_game_id)
+            .outerjoin(member_counts, member_counts.c.team_id == Team.id)
+            .filter(or_(Team.captain_id == current_user.id, Team.id.in_(membership)))
+            .order_by(Team.name, Team.id).all())
+    data = [{"id": team.id, "name": team.name, "game": game, "description": team.description,
+             "role": "captain" if team.captain_id == current_user.id else "member",
+             "members": count or 0, "maxMembers": team.max_members}
+            for team, game, count in rows]
+    return success_response(req, 200, "Lấy danh sách đội thành công", data)
 
 
 @router.get(

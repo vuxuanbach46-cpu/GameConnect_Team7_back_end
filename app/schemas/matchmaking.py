@@ -12,6 +12,15 @@ class RoomMemberOut(BaseModel):
     username: str
     is_host: bool = False
     joined_at: datetime
+    display_name: str | None = None
+    avatar: str | None = None
+    rank_id: int | None = None
+    rank_name: str | None = None
+    rank_icon: str | None = None
+    role_id: int | None = None
+    role_name: str | None = None
+    roles: list[str] = []
+    in_game_id: str | None = None
 
 
 class CreateLobbyRequest(BaseModel):
@@ -53,14 +62,20 @@ class MatchRoomOut(BaseModel):
 
     id: int
     host_id: int
+    host_username: str | None = None
+    host_display_name: str | None = None
+    host_avatar: str | None = None
     game_id: int
     game_name: str | None = None
+    game_image: str | None = None
     room_name: str
     game_code: str | None = None
     max_players: int
     current_players: int
     min_rank_id: int | None = None
+    min_rank_name: str | None = None
     max_rank_id: int | None = None
+    max_rank_name: str | None = None
     label: str | None = None
     status: RoomStatus
     members: list[RoomMemberOut] = []

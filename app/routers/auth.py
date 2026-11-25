@@ -32,7 +32,11 @@ from app.core.security import get_current_user
 from app.crud.auth import change_password_service, request_password_reset_service
 from app.core.google_oauth import oauth
 from app.core.security import oauth2_schema
-from app.core.security import google_login_service , create_access_token, create_refresh_token
+from app.core.security import (
+    google_login_service,
+    create_access_token,
+    create_refresh_token as generate_refresh_token,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +119,7 @@ def create_register(req: Request, info: UserRegisterRequest, db=Depends(get_db))
     account_token = create_access_token(
         data={"email": user_new.email, "sub": str(user_new.id), "role": user_role}
     )
-    refresh_token = create_refresh_token(data={"sub": str(user_new.id)})
+    refresh_token = generate_refresh_token(data={"sub": str(user_new.id)})
 
     response_data = {
         "id": user_new.id,

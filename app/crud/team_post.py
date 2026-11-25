@@ -19,6 +19,8 @@ from app.models.game import Game
 from app.models.game_rank import GameRank
 from app.models.game_role import GameRole
 from app.models.user_game import UserGame
+from app.models.team import Team, TeamJoinMode
+from app.models.team_member import TeamMember, TeamMemberRole
 from app.models.team_post import (
     ApplicationStatus,
     PostStatus,
@@ -28,6 +30,7 @@ from app.models.team_post import (
 )
 from app.crud.notification import create_notification
 from app.schemas.team_post import (
+    CreateTeamFromPostRequest,
     TeamPostApplicationCreate,
     TeamPostApplicationUpdate,
     TeamPostCreate,
@@ -264,9 +267,16 @@ def get_team_post(db: Session, post_id: int) -> TeamPost | None:
 def create_team_post(
     db: Session,
     data: TeamPostCreate,
-    user_id: int,
+    user_id: int | None = None,
 ) -> TeamPost:
     """Tạo bài đăng tìm đội kèm đầy đủ business validation."""
+    effective_user_id = user_id if user_id is not None else getattr(data, "user_id", None)
+    if not effective_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Không xác định được người đăng bài",
+        )
+    user_id = int(effective_user_id)
     # 1. Kiểm tra giới hạn: Mỗi user tối đa 3 bài đang mở (PostStatus.OPEN)
     open_posts_count = (
         db.query(TeamPost)
@@ -557,9 +567,19 @@ def get_application(db: Session, application_id: int) -> TeamPostApplication | N
 
 
 def create_application(
-    db: Session, team_post_id: int, user_id: int, data: TeamPostApplicationCreate
+    db: Session,
+    team_post_id: int,
+    user_id_or_data: int | TeamPostApplicationCreate,
+    data: TeamPostApplicationCreate | None = None,
 ) -> TeamPostApplication:
-    # 1. Kiểm tra bài đăng tồn tại
+    if isinstance(user_id_or_data, int):
+        user_id = user_id_or_data
+        if data is None:
+            raise HTTPException(status_code=400, detail="Thiếu dữ liệu đơn ứng tuyển")
+    else:
+        data = user_id_or_data
+        user_id = int(getattr(data, "user_id", 0) or 0)
+    # Kiểm tra bài đăng có đang OPEN không
     post = db.get(TeamPost, team_post_id)
     if not post:
         raise HTTPException(status_code=404, detail="Bài đăng không tồn tại")
@@ -804,3 +824,188 @@ def delete_application(db: Session, application: TeamPostApplication) -> None:
         if accepted_count < post.needed_players:
             post.status = PostStatus.OPEN
     db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Tạo đội từ bài đăng đủ người (Task T3CD622)
+# ---------------------------------------------------------------------------
+
+def create_team_from_full_post(
+    db: Session,
+    post_id: int,
+    current_user_id: int,
+    data: CreateTeamFromPostRequest | None = None,
+) -> dict:
+    """Tạo đội từ bài đăng đủ người (Task T3CD622).
+
+    Quy tắc:
+    - Bài đăng phải tồn tại.
+    - Người gọi phải là chủ bài đăng.
+    - Bài đăng phải ở trạng thái FULL hoặc có đủ số ứng viên ACCEPTED >= needed_players.
+    - Tạo Team mới (tên đội lấy theo request hoặc tự sinh theo tiêu đề bài đăng, đảm bảo không trùng).
+    - Chủ bài đăng trở thành CAPTAIN.
+    - Tất cả ứng viên ACCEPTED trở thành MEMBER.
+    - Gửi thông báo đến chủ bài đăng và các thành viên được thêm vào đội.
+    """
+    post = db.get(TeamPost, post_id)
+    if not post:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Không tìm thấy bài đăng id={post_id}",
+        )
+
+    if post.user_id != current_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Chỉ chủ bài đăng mới có quyền tạo đội từ bài đăng này",
+        )
+
+    # Lấy danh sách ứng viên đã được chấp nhận
+    accepted_apps = (
+        db.query(TeamPostApplication)
+        .filter(
+            TeamPostApplication.team_post_id == post.id,
+            TeamPostApplication.status == ApplicationStatus.ACCEPTED,
+        )
+        .all()
+    )
+
+    if post.status != PostStatus.FULL and len(accepted_apps) < post.needed_players:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Bài đăng chưa đủ người để tạo đội. Cần tối thiểu {post.needed_players} thành viên được chấp nhận (hiện có {len(accepted_apps)}).",
+        )
+
+    # Xác định tên đội
+    raw_name = (data.name.strip() if data and data.name and data.name.strip() else None)
+    if not raw_name:
+        raw_name = f"Team {post.title}".strip()
+
+    # Chuẩn hoá và đảm bảo độ dài 2..100 ký tự
+    if len(raw_name) > 90:
+        raw_name = raw_name[:90].strip()
+    if len(raw_name) < 2:
+        raw_name = f"Team #{post.id}"
+
+    # Đảm bảo tên đội là unique
+    base_name = raw_name
+    unique_name = base_name
+    counter = 1
+    while db.query(Team).filter(func.lower(Team.name) == unique_name.lower()).first():
+        counter += 1
+        suffix = f" #{counter}"
+        avail_len = 100 - len(suffix)
+        unique_name = f"{base_name[:avail_len]}{suffix}"
+
+    team_name = unique_name
+
+    # Mô tả và logo
+    description = (
+        data.description.strip()
+        if data and data.description and data.description.strip()
+        else f"Đội tuyển được thành lập từ bài đăng: {post.title}"
+    )
+    logo_url = data.logo_url.strip() if data and data.logo_url and data.logo_url.strip() else None
+
+    # Chế độ tham gia
+    join_mode = TeamJoinMode.APPROVAL_REQUIRED
+    if data and data.join_mode:
+        try:
+            join_mode = TeamJoinMode(data.join_mode)
+        except (ValueError, KeyError):
+            join_mode = TeamJoinMode.APPROVAL_REQUIRED
+
+    # Số lượng thành viên tối đa: ít nhất 5, ít nhất số lượng hiện tại + 1
+    total_initial_members = 1 + len(accepted_apps)
+    max_members = max(5, total_initial_members)
+    if max_members > 100:
+        max_members = 100
+
+    # Tạo Team
+    team = Team(
+        name=team_name,
+        logo_url=logo_url,
+        main_game_id=post.game_id,
+        description=description,
+        captain_id=current_user_id,
+        max_members=max_members,
+        join_mode=join_mode,
+    )
+    db.add(team)
+    db.flush()
+
+    # Thêm Captain vào team_members
+    captain_member = TeamMember(
+        team_id=team.id,
+        user_id=current_user_id,
+        role=TeamMemberRole.CAPTAIN,
+    )
+    db.add(captain_member)
+
+    captain_user = db.get(User, current_user_id)
+    captain_username = captain_user.username if captain_user else f"User #{current_user_id}"
+
+    members_response = [
+        {
+            "user_id": current_user_id,
+            "role": "CAPTAIN",
+            "username": captain_username,
+        }
+    ]
+
+    # Thêm các ứng viên ACCEPTED vào team_members
+    added_user_ids = {current_user_id}
+    for app in accepted_apps:
+        if app.user_id in added_user_ids:
+            continue
+        added_user_ids.add(app.user_id)
+
+        tm = TeamMember(
+            team_id=team.id,
+            user_id=app.user_id,
+            role=TeamMemberRole.MEMBER,
+        )
+        db.add(tm)
+
+        member_user = db.get(User, app.user_id)
+        uname = member_user.username if member_user else f"User #{app.user_id}"
+        members_response.append({
+            "user_id": app.user_id,
+            "role": "MEMBER",
+            "username": uname,
+        })
+
+        # Gửi thông báo đến thành viên
+        create_notification(
+            db=db,
+            recipient_id=app.user_id,
+            type="TEAM_CREATED_FROM_POST",
+            content=f"Bạn đã được thêm vào đội '{team.name}' từ bài đăng '{post.title}'.",
+            link=f"/pages/team-detail.html?id={team.id}",
+        )
+
+    # Đảm bảo trạng thái bài đăng là FULL (đã đủ người thành lập đội)
+    post.status = PostStatus.FULL
+
+    # Gửi thông báo thành công cho Captain
+    create_notification(
+        db=db,
+        recipient_id=current_user_id,
+        type="TEAM_CREATED_FROM_POST",
+        content=f"Đội '{team.name}' đã được tạo thành công với {len(members_response)} thành viên!",
+        link=f"/pages/team-detail.html?id={team.id}",
+    )
+
+    db.commit()
+    db.refresh(team)
+
+    return {
+        "team_id": team.id,
+        "team_name": team.name,
+        "main_game_id": team.main_game_id,
+        "captain_id": team.captain_id,
+        "max_members": team.max_members,
+        "members_count": len(members_response),
+        "members": members_response,
+        "message": f"Tạo đội '{team.name}' thành công từ bài đăng!",
+    }

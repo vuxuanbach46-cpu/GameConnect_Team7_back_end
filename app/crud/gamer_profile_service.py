@@ -2,36 +2,38 @@
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, UploadFile
 from pathlib import Path
-from uuid import uuid4
 
 from app.models.gamer_profile import GamerProfile
 from app.models.user import User
+from app.crud.image_upload import save_uploaded_image
 
-import os
 
 
-AVATAR_DIR = Path("app/uploads/avatars")
-AVATAR_DIR.mkdir(parents=True, exist_ok=True)
+AVATAR_DIR = Path(__file__).resolve().parent.parent / "uploads" / "avatars"
 
-MAX_FILE_SIZE = 5 * 1024 * 1024
 
-ALLOWED_IMAGES = {
-    "image/jpeg": ".jpg",
-    "image/png": ".png",
-    "image/webp": ".webp"
-}
+def create_profile(db: Session, user_id: int, profile_data):
+    existing = get_profile_by_user_id(db, user_id)
+    if existing:
+        raise HTTPException(status_code=409, detail="Hồ sơ game thủ đã tồn tại")
 
-IMAGE_SIGNATURES = {
-    "image/jpeg": lambda data: data.startswith(b"\xff\xd8\xff"),
-    "image/png": lambda data: data.startswith(
-        b"\x89PNG\r\n\x1a\n"
-    ),
-    "image/webp": lambda data: (
-        len(data) >= 12
-        and data[:4] == b"RIFF"
-        and data[8:12] == b"WEBP"
+    display_name = profile_data.display_name.strip()
+    if not display_name:
+        raise HTTPException(status_code=400, detail="Tên hiển thị không được để trống")
+
+    profile = GamerProfile(
+        user_id=user_id,
+        display_name=display_name,
+        bio=profile_data.bio,
+        region=profile_data.region,
+        play_time=profile_data.play_time,
+        has_mic=profile_data.has_mic,
+        is_public=profile_data.is_public,
     )
-}
+    db.add(profile)
+    db.commit()
+    db.refresh(profile)
+    return profile
 
 
 def get_profile_by_user_id(db: Session, user_id: int):
@@ -106,43 +108,10 @@ async def upload_avatar(
             detail="Hồ sơ không tồn tại"
         )
 
-    content_type = file.content_type
-
-    if content_type not in ALLOWED_IMAGES:
-        raise HTTPException(
-            status_code=400,
-            detail="Chỉ chấp nhận JPG, PNG hoặc WEBP"
-        )
-
-    content = await file.read(MAX_FILE_SIZE + 1)
-
-    if not content:
-        raise HTTPException(
-            status_code=400,
-            detail="File ảnh không được để trống"
-        )
-
-    if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=400,
-            detail="Dung lượng ảnh tối đa là 5MB"
-        )
-
-    if not IMAGE_SIGNATURES[content_type](content):
-        raise HTTPException(
-            status_code=400,
-            detail="Nội dung file không đúng định dạng ảnh"
-        )
-
-    extension = ALLOWED_IMAGES[content_type]
-    filename = f"{uuid4().hex}{extension}"
-
+    filename = await save_uploaded_image(file, AVATAR_DIR)
     file_path = AVATAR_DIR / filename
 
     try:
-        with open(file_path, "wb") as f:
-            f.write(content)
-
         old_avatar = profile.avatar
 
         profile.avatar = f"/uploads/avatars/{filename}"

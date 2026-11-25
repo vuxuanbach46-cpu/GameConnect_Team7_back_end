@@ -21,6 +21,8 @@ from app.db.session import get_db
 from app.models.team_post import PostStatus, TeamPost
 from app.models.user import User
 from app.schemas.team_post import (
+    CreateTeamFromPostRequest,
+    CreateTeamFromPostResponse,
     TeamPostApplicationCreate,
     TeamPostApplicationOut,
     TeamPostApplicationUpdate,
@@ -240,7 +242,9 @@ def create_team_post(
     - Giới hạn: mỗi user tối đa 3 bài đăng đang mở (OPEN).
     """
     return team_post_crud.create_team_post(
-        db, data.model_copy(update={"user_id": current_user.id})
+        db,
+        data.model_copy(update={"user_id": current_user.id}),
+        user_id=current_user.id,
     )
 
 
@@ -318,10 +322,10 @@ def create_application(
     - Gửi thông báo đến chủ bài đăng qua module Thông báo.
     """
     return team_post_crud.create_application(
-        db=db,
-        team_post_id=post_id,
-        user_id=current_user.id,
-        data=data,
+        db,
+        post_id,
+        current_user.id,
+        data.model_copy(update={"user_id": current_user.id}),
     )
 
 
@@ -382,3 +386,35 @@ def delete_application(
             detail="Chỉ người gửi đơn hoặc chủ bài đăng mới được xóa đơn ứng tuyển",
         )
     team_post_crud.delete_application(db, application)
+
+
+# ---------------------------------------------------------------------------
+# Tạo đội từ bài đăng đủ người (Task T3CD622)
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/{post_id}/create-team",
+    response_model=CreateTeamFromPostResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Tạo đội từ bài đăng đủ người (FULL)",
+)
+def create_team_from_post(
+    post_id: int,
+    data: CreateTeamFromPostRequest | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Chủ bài đăng tạo đội từ bài đăng đã đủ người (FULL).
+
+    Quy tắc nghiệp vụ:
+    - Chỉ chủ bài đăng mới có quyền tạo đội.
+    - Bài đăng phải ở trạng thái FULL hoặc đã có đủ số ứng viên được chấp nhận (ACCEPTED >= needed_players).
+    - Tạo đội mới với Game của bài đăng, Captain là chủ bài đăng, các thành viên là ứng viên đã được ACCEPTED.
+    - Gửi thông báo đến toàn bộ thành viên trong đội.
+    """
+    return team_post_crud.create_team_from_full_post(
+        db=db,
+        post_id=post_id,
+        current_user_id=current_user.id,
+        data=data,
+    )
