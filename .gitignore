@@ -11,3 +11,6 @@ env/
 # IDE
 .vscode/
 .idea/
+.pytest_cache/
+.venv-1/
+start-gameconnect.bat

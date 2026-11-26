@@ -51,6 +51,17 @@ def create_comment(
             content=f"Có bình luận mới trên bài viết #{post.id}.",
             link=f"/posts/{post.id}",
         )
+    # Thông báo cho chủ bình luận gốc khi có người trả lời
+    if data.parent_comment_id is not None:
+        parent = get_comment(db, data.parent_comment_id)
+        if parent is not None and parent.user_id != user_id:
+            create_notification(
+                db,
+                recipient_id=parent.user_id,
+                type="POST_COMMENT",
+                content=f"Có trả lời mới cho bình luận của bạn trên bài viết #{post.id}.",
+                link=f"/posts/{post.id}",
+            )
     db.commit()
     db.refresh(comment)
     return comment

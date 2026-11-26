@@ -58,6 +58,15 @@ async def lifespan(app: FastAPI):
                         "[DB] Added posts.image_urls and migrated existing image URLs."
                     )
 
+                if "visibility" not in post_columns:
+                    connection.execute(
+                        text(
+                            "ALTER TABLE posts ADD COLUMN visibility VARCHAR(10) "
+                            "NOT NULL DEFAULT 'PUBLIC'"
+                        )
+                    )
+                    print("[DB] Added posts.visibility column.")
+
             if "match_rooms" in table_names_set:
                 match_rooms_cols = {
                     column["name"]

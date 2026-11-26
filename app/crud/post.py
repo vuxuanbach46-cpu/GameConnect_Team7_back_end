@@ -32,7 +32,9 @@ def _game_names_for_hashtag(hashtag: str) -> list[str]:
 
 
 def _visible_posts_query(
-    db: Session, current_user_id: int | None = None
+    db: Session,
+    current_user_id: int | None = None,
+    include_friends_posts: bool = False,
 ) -> Query[Post]:
     query = (
         db.query(Post)
@@ -56,6 +58,63 @@ def _visible_posts_query(
                 )
             )
         )
+        if include_friends_posts:
+            # Người xem được thấy bài PUBLIC của mọi người + bài FRIENDS của bạn bè
+            # và bài FRIENDS/PRIVATE của chính mình
+            query = query.filter(
+                or_(
+                    Post.visibility == "PUBLIC",
+                    Post.user_id == current_user_id,
+                    and_(
+                        Post.visibility == "FRIENDS",
+                        exists(
+                            select(Friendship.id).where(
+                                or_(
+                                    and_(
+                                        Friendship.user_a == current_user_id,
+                                        Friendship.user_b == Post.user_id,
+                                    ),
+                                    and_(
+                                        Friendship.user_b == current_user_id,
+                                        Friendship.user_a == Post.user_id,
+                                    )
+                                )
+                            )
+                        ),
+                    ),
+                )
+            )
+    elif include_friends_posts:
+        # Người xem chưa đăng nhập: chỉ thấy bài PUBLIC
+        query = query.filter(Post.visibility == "PUBLIC")
+    if current_user_id is not None and not include_friends_posts:
+        # Với các nguồn khác (featured, search, ...): bài PRIVATE chỉ hiện với tác giả,
+        # bài FRIENDS hiện với tác giả và bạn bè
+        query = query.filter(
+            or_(
+                Post.visibility == "PUBLIC",
+                Post.user_id == current_user_id,
+                and_(
+                    Post.visibility == "FRIENDS",
+                    exists(
+                        select(Friendship.id).where(
+                            or_(
+                                and_(
+                                    Friendship.user_a == current_user_id,
+                                    Friendship.user_b == Post.user_id,
+                                ),
+                                and_(
+                                    Friendship.user_b == current_user_id,
+                                    Friendship.user_a == Post.user_id,
+                                )
+                            )
+                        )
+                    ),
+                ),
+            )
+        )
+    elif current_user_id is None and not include_friends_posts:
+        query = query.filter(Post.visibility == "PUBLIC")
     return query
 
 
@@ -292,6 +351,7 @@ def create_post(db: Session, data: PostCreate, user_id: int) -> Post:
         image_url=image_urls[0] if image_urls else None,
         image_urls=image_urls,
         status=data.status.value,
+        visibility=data.visibility.value,
     )
     try:
         _set_games(db, post, data.game_ids)
@@ -338,6 +398,8 @@ def update_post(db: Session, post: Post, data: PostUpdate) -> Post:
 
     for field, value in updates.items():
         if field == "status" and value is not None:
+            value = value.value
+        if field == "visibility" and value is not None:
             value = value.value
         if field == "content" and value is None:
             continue

@@ -20,6 +20,7 @@ from app.crud import post as post_crud
 from app.crud import post_like as post_like_crud
 from app.db.session import get_db
 from app.models.comment import Comment
+from app.models.friendships import Friendship
 from app.models.gamer_profile import GamerProfile
 from app.models.post import Post
 from app.models.post_like import PostLike
@@ -96,6 +97,7 @@ def _post_response(
         image_urls=image_urls,
         game_ids=[post_game.game_id for post_game in post.post_games],
         status=post.status,
+        visibility=post.visibility,
         created_at=post.created_at,
         updated_at=post.updated_at,
         like_count=like_count,
@@ -150,6 +152,27 @@ def _post_or_404(db: Session, post_id: int) -> Post:
             detail="Không tìm thấy bài viết",
         )
     return post
+
+
+def _require_can_view_post(db: Session, post: Post, current_user: User | None) -> None:
+    if post.visibility == "PUBLIC" or (current_user and post.user_id == current_user.id):
+        return
+    if current_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Không tìm thấy bài viết",
+        )
+    is_friend = db.query(Friendship.id).filter(
+        or_(
+            and_(Friendship.user_a == current_user.id, Friendship.user_b == post.user_id),
+            and_(Friendship.user_b == current_user.id, Friendship.user_a == post.user_id),
+        )
+    ).first() is not None
+    if not is_friend:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Không tìm thấy bài viết",
+        )
 
 
 def _require_author(post: Post, current_user: User) -> None:
@@ -306,6 +329,7 @@ def read_post(
     current_user: User | None = Depends(get_optional_user),
 ):
     post = _post_or_404(db, post_id)
+    _require_can_view_post(db, post, current_user)
     like_count, comment_count = post_crud.get_post_counts(db, post_id)
     liked = False
     if current_user:
@@ -393,8 +417,10 @@ def list_comments(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_user),
 ):
-    _post_or_404(db, post_id)
+    post = _post_or_404(db, post_id)
+    _require_can_view_post(db, post, current_user)
     comments = comment_crud.get_comments(db, post_id, skip=skip, limit=limit)
     return api_repoint(
         req=req,
@@ -417,6 +443,7 @@ def create_comment(
     current_user: User = Depends(get_current_user),
 ):
     post = _post_or_404(db, post_id)
+    _require_can_view_post(db, post, current_user)
     try:
         comment = comment_crud.create_comment(db, post, current_user.id, data)
     except ValueError as error:
