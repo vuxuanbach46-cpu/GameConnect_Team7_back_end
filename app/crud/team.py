@@ -5,6 +5,9 @@ from fastapi import HTTPException
 from app.models.team import Team, TeamJoinMode
 from app.models.team_member import TeamMember, TeamMemberRole
 from app.models.team_join_request import TeamJoinRequest, TeamJoinRequestStatus
+from app.models.team_chat_message import TeamChatMessage
+from app.models.team_feed_post import TeamFeedPost
+from app.models.team_invitation import TeamInvitation
 from app.models.user import User, UserRole
 from app.models.game import Game
 
@@ -18,6 +21,7 @@ from app.schemas.team import (
 from app.crud.notification import create_notification
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import case
+from sqlalchemy import delete
 
 
 # Tạo đội
@@ -464,10 +468,15 @@ def review_join_request_service(
     if not team:
         raise HTTPException(status_code=404, detail="Đội không tồn tại")
 
-    if team.captain_id != current_user.id and current_user.role != UserRole.ADMIN:
+    if team.captain_id != current_user.id:
         raise HTTPException(
             status_code=403,
-            detail="Chỉ đội trưởng mới có quyền duyệt đơn xin gia nhập",
+            detail="Chỉ đội trưởng câu lạc bộ mới có quyền duyệt đơn xin gia nhập",
+        )
+    if team.join_mode != TeamJoinMode.APPROVAL_REQUIRED:
+        raise HTTPException(
+            status_code=409,
+            detail="Câu lạc bộ đang cho phép tham gia tự do, không thể duyệt yêu cầu gia nhập",
         )
 
     join_request = (
@@ -638,6 +647,35 @@ def remove_team_member_service(
         "user_id": user_id,
         "message": f"Đã xóa thành viên khỏi đội '{team.name}' thành công",
     }
+
+
+def delete_team_service(db: Session, team_id: int, current_user: User):
+    """Delete a club and its associated membership, invitation, feed, and chat data."""
+    team = db.query(Team).filter(Team.id == team_id).with_for_update().first()
+    if not team:
+        raise HTTPException(status_code=404, detail="Câu lạc bộ không tồn tại")
+    if team.captain_id != current_user.id and current_user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=403,
+            detail="Chỉ đội trưởng câu lạc bộ mới có quyền xóa câu lạc bộ này",
+        )
+
+    team_name = team.name
+    try:
+        # Explicitly delete children so this works consistently across DB engines,
+        # including databases where FK cascade is not enabled for every table.
+        db.execute(delete(TeamChatMessage).where(TeamChatMessage.team_id == team_id))
+        db.execute(delete(TeamFeedPost).where(TeamFeedPost.team_id == team_id))
+        db.execute(delete(TeamInvitation).where(TeamInvitation.team_id == team_id))
+        db.execute(delete(TeamJoinRequest).where(TeamJoinRequest.team_id == team_id))
+        db.execute(delete(TeamMember).where(TeamMember.team_id == team_id))
+        db.delete(team)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    return {"team_id": team_id, "message": f"Đã xóa câu lạc bộ '{team_name}' thành công"}
 
 
 # 3. Chuyển quyền Đội trưởng

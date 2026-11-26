@@ -114,14 +114,9 @@ def join_team(
             .first()
         )
 
-        if (
-            join_request
-            and join_request.status == TeamJoinRequestStatus.ACCEPTED
-        ):
-            raise TeamJoinError(
-                409,
-                "Yêu cầu tham gia đã được chấp nhận; vui lòng liên hệ đội trưởng.",
-            )
+        # Membership is the source of truth. A previous request can remain
+        # ACCEPTED after a captain removes that member; allow the user to join
+        # again, directly for PUBLIC clubs or by reopening the request below.
 
         # 5. Nếu đội công khai thì tham gia trực tiếp
         if team.join_mode == TeamJoinMode.PUBLIC:

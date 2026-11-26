@@ -26,6 +26,7 @@ from app.core.auth_middleware import AuthMiddleware
 from app.routers import reports
 from app.routers import friend_request
 from app.routers import team_join, team, team_feed, team_invitation, chat
+from app.routers import team_chat
 from app.routers import admin_users, admin_dashboard
 
 @asynccontextmanager
@@ -226,6 +227,7 @@ app.include_router(reports.router)
 app.include_router(admin_users.router)
 app.include_router(admin_dashboard.router)
 app.include_router(team.router, prefix="/api")
+app.include_router(team_chat.router)
 app.include_router(chat.router)
 app.include_router(chat.router, prefix="/api", include_in_schema=False)
 app.include_router(chat.ws_router)

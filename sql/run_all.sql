@@ -36,6 +36,7 @@ SOURCE ./team_members.sql;
 SOURCE ./team_join_requests.sql;
 SOURCE ./team_feed_posts.sql;
 SOURCE ./team_invitations.sql;
+SOURCE ./team_chat_messages.sql;
 
 SET FOREIGN_KEY_CHECKS = 1;
 
