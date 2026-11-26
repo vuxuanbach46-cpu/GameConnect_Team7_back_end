@@ -66,6 +66,13 @@ def submit_report(
             detail="Bạn không thể báo cáo chính tài khoản của mình",
         )
 
+    if info.target_type in (ReportTargetType.POST, ReportTargetType.COMMENT, ReportTargetType.TEAM_POST):
+        if getattr(target, "user_id", None) == current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Bạn không thể báo cáo nội dung của chính mình",
+            )
+
     existed = db.query(Report).filter(
         Report.reporter_id == current_user.id,
         Report.target_type == info.target_type.value,
