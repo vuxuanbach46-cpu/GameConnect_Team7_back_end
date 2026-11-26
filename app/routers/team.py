@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, Request, HTTPException, Query, status
+from pathlib import Path
+from fastapi import APIRouter, Depends, Request, HTTPException, Query, status, UploadFile, File
 
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
@@ -33,13 +34,29 @@ from app.crud.team import (
     transfer_captain_service,
     leave_team_service,
 )
+from app.crud.image_upload import save_uploaded_image
 
 router = APIRouter(prefix="/teams", tags=["Teams"])
+TEAM_IMAGE_DIR = Path(__file__).resolve().parent.parent / "uploads" / "teams"
 
 
 # ==============================
 # COMMON RESPONSE
 # ==============================
+
+@router.post("/images", status_code=status.HTTP_201_CREATED, summary="Tải ảnh câu lạc bộ lên")
+async def upload_team_image(
+    req: Request,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
+    filename = await save_uploaded_image(file, TEAM_IMAGE_DIR)
+    return api_repoint(
+        req=req,
+        status_code=status.HTTP_201_CREATED,
+        message="Tải ảnh câu lạc bộ lên thành công",
+        data={"image_url": f"/uploads/teams/{filename}"},
+    )
 
 
 def success_response(req: Request, status_code: int, message: str, data=None):

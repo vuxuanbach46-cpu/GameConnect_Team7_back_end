@@ -3,6 +3,7 @@ CREATE TABLE
         id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
         name VARCHAR(100) NOT NULL,
         logo_url VARCHAR(500) NULL,
+        cover_url VARCHAR(500) NULL,
         main_game_id BIGINT UNSIGNED NOT NULL,
         description TEXT NULL,
         captain_id BIGINT UNSIGNED NOT NULL,
