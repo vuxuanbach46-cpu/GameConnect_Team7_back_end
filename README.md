@@ -82,6 +82,21 @@ GOOGLE_REDIRECT_URI=http://127.0.0.1:8000/auth/google/callback
 SESSION_SECRET_KEY=gia_tri_ngau_nhien_tu_lenh_python
 ```
 
+Để gửi email khi đăng ký và quên mật khẩu, điền cấu hình SMTP Gmail trong `.env`:
+
+```dotenv
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your-account@gmail.com
+SMTP_APP_PASSWORD=xxxx xxxx xxxx xxxx
+SMTP_FROM_EMAIL=your-account@gmail.com
+SMTP_FROM_NAME=GameConnect
+SMTP_USE_SSL=false
+SMTP_STARTTLS=true
+```
+
+Trong Google Account, bật xác minh 2 bước rồi tạo **App Password**; không dùng mật khẩu Google thông thường. Email chào mừng và mã đặt lại mật khẩu được gửi bằng `BackgroundTasks` sau phản hồi API. Mã đặt lại có hiệu lực 15 phút. Nếu SMTP chưa cấu hình hoặc gửi lỗi, API vẫn hoàn tất yêu cầu và lỗi gửi mail được ghi vào log backend.
+
 ## 5. Bước 3: cài thư viện Python
 
 Tạo môi trường ảo (chỉ làm 1 lần):

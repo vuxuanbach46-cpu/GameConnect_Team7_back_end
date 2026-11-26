@@ -44,6 +44,10 @@ class Team(Base):
         String(500),
         nullable=True,
     )
+    cover_url = Column(
+        String(500),
+        nullable=True,
+    )
     main_game_id = Column(
         Integer,
         ForeignKey(
