@@ -25,4 +25,5 @@ from app.models.matchmaking import MatchRoom, MatchRoomMember, MatchQueue  # noq
 
 from app.models.team_invitation import TeamInvitation  # noqa: F401
 from app.models.direct_message import DirectMessage  # noqa: F401
+from app.models.team_chat_message import TeamChatMessage  # noqa: F401
 

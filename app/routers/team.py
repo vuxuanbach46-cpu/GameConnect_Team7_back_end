@@ -33,11 +33,28 @@ from app.crud.team import (
     remove_team_member_service,
     transfer_captain_service,
     leave_team_service,
+    delete_team_service,
 )
 from app.crud.image_upload import save_uploaded_image
 
 router = APIRouter(prefix="/teams", tags=["Teams"])
 TEAM_IMAGE_DIR = Path(__file__).resolve().parent.parent / "uploads" / "teams"
+
+
+@router.delete("/{team_id}", response_model=APIRepoint, summary="Xóa câu lạc bộ")
+def delete_team(
+    req: Request,
+    team_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        result = delete_team_service(db=db, team_id=team_id, current_user=current_user)
+        return success_response(
+            req=req, status_code=200, message=result["message"], data=result
+        )
+    except HTTPException as exc:
+        return error_response(req, exc)
 
 
 # ==============================
@@ -183,6 +200,8 @@ def get_pending_requests(team_id: int, req: Request, db: Session = Depends(get_d
     team = db.query(Team).filter_by(id=team_id).first()
     if not team: raise HTTPException(404, "Không tìm thấy đội")
     if team.captain_id != current_user.id: raise HTTPException(403, "Chỉ đội trưởng mới xem được yêu cầu")
+    if team.join_mode != TeamJoinMode.APPROVAL_REQUIRED:
+        raise HTTPException(409, "Câu lạc bộ đang cho phép tham gia tự do, không có yêu cầu cần duyệt")
     rows = (db.query(TeamJoinRequest, User).join(User, User.id == TeamJoinRequest.user_id)
             .filter(TeamJoinRequest.team_id == team_id, TeamJoinRequest.status == TeamJoinRequestStatus.PENDING)
             .order_by(TeamJoinRequest.created_at).all())
