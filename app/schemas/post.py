@@ -12,6 +12,12 @@ class PostStatus(str, Enum):
     HIDDEN = "HIDDEN"
 
 
+class PostVisibility(str, Enum):
+    PUBLIC = "PUBLIC"
+    FRIENDS = "FRIENDS"
+    PRIVATE = "PRIVATE"
+
+
 ImageURL = Annotated[str, Field(min_length=1, max_length=500)]
 
 
@@ -36,6 +42,7 @@ class PostCreate(BaseModel):
     image_urls: list[ImageURL] = Field(default_factory=list, max_length=4)
     game_ids: list[int] = Field(default_factory=list)
     status: PostStatus = PostStatus.VISIBLE
+    visibility: PostVisibility = PostVisibility.PUBLIC
 
     @field_validator("image_url")
     @classmethod
@@ -66,6 +73,7 @@ class PostUpdate(BaseModel):
     image_urls: list[ImageURL] | None = Field(default=None, max_length=4)
     game_ids: list[int] | None = None
     status: PostStatus | None = None
+    visibility: PostVisibility | None = None
 
     @field_validator("image_url")
     @classmethod
@@ -93,6 +101,7 @@ class PostOut(BaseModel):
     image_urls: list[str] = Field(default_factory=list)
     game_ids: list[int]
     status: PostStatus
+    visibility: PostVisibility = PostVisibility.PUBLIC
     created_at: datetime
     updated_at: datetime
     like_count: int

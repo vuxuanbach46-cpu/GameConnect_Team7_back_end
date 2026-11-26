@@ -23,10 +23,19 @@ class PostStatus(str, enum.Enum):
     HIDDEN = "HIDDEN"
 
 
+class PostVisibility(str, enum.Enum):
+    PUBLIC = "PUBLIC"
+    FRIENDS = "FRIENDS"
+    PRIVATE = "PRIVATE"
+
+
 class Post(Base):
     __tablename__ = "posts"
     __table_args__ = (
-        CheckConstraint("status IN ('VISIBLE', 'HIDDEN')", name="ck_posts_status"),
+        CheckConstraint(
+            "status IN ('VISIBLE', 'HIDDEN') AND visibility IN ('PUBLIC', 'FRIENDS', 'PRIVATE')",
+            name="ck_posts_status",
+        ),
         Index("ix_posts_user_created", "user_id", "created_at"),
         Index("ix_posts_status_created", "status", "created_at"),
     )
@@ -39,6 +48,9 @@ class Post(Base):
     image_url = Column(String(500), nullable=True)
     image_urls = Column(JSON, nullable=True)
     status = Column(String(10), nullable=False, default=PostStatus.VISIBLE.value)
+    visibility = Column(
+        String(10), nullable=False, default=PostVisibility.PUBLIC.value
+    )
     created_at = Column(DateTime, nullable=False, server_default=func.current_timestamp())
     updated_at = Column(
         DateTime,
