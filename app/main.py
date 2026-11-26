@@ -21,11 +21,11 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.routers import auth, gamer_profile, notifications, posts, team_post, users
 from app.routers import games, user_games, admin_games, profile_search
-from app.routers import matchmaking
+from app.routers import matchmaking , team_feed
 from app.core.auth_middleware import AuthMiddleware
 from app.routers import reports
 from app.routers import friend_request
-from app.routers import team_join, team, team_invitation, chat
+from app.routers import team_join, team, team_feed, team_invitation, chat
 from app.routers import admin_users, admin_dashboard
 
 @asynccontextmanager
@@ -66,6 +66,16 @@ async def lifespan(app: FastAPI):
                         )
                     )
                     print("[DB] Added posts.visibility column.")
+            if "teams" in table_names_set:
+                team_columns = {
+                    column["name"]
+                    for column in inspect(connection).get_columns("teams")
+                }
+                if "cover_url" not in team_columns:
+                    connection.execute(
+                        text("ALTER TABLE teams ADD COLUMN cover_url VARCHAR(500) NULL")
+                    )
+                    print("[DB] Added teams.cover_url.")
 
             if "match_rooms" in table_names_set:
                 match_rooms_cols = {

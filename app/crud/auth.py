@@ -9,12 +9,10 @@ from app.core.security import (
     create_refresh_token,
 )
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func
 from datetime import datetime, timedelta, timezone
 import secrets
-import logging
 from app.models.password_reset_token import PasswordResetToken
-
-logger = logging.getLogger(__name__)
 
 
 def create_register_service(info: UserRegisterRequest, db: Session):
@@ -144,10 +142,20 @@ def change_password_service(user: User, old_password: str, new_password: str, db
         raise
 
 
-def request_password_reset_service(email: str, db: Session, log_code: bool = False):
-    """Issue a short lived reset code, without revealing whether the account exists."""
+def request_password_reset_service(email: str, db: Session):
+    """Issue a short lived reset code; return it only to the calling route for email delivery."""
+    reset_code = None
     try:
-        user = db.query(User).filter(User.email == email.strip().lower()).first()
+        normalized_email = email.strip().lower()
+        user = (
+            db.query(User)
+            .filter(
+                func.lower(User.email) == normalized_email,
+                User.auth_provider == AuthProvider.LOCAL,
+                User.password_hash.isnot(None),
+            )
+            .first()
+        )
         if user:
             now = datetime.utcnow()
             (db.query(PasswordResetToken)
@@ -156,15 +164,72 @@ def request_password_reset_service(email: str, db: Session, log_code: bool = Fal
                      PasswordResetToken.invalidated_at.is_(None))
              .update({PasswordResetToken.invalidated_at: now}, synchronize_session=False))
             code = f"{secrets.randbelow(1_000_000):06d}"
+            reset_code = code
             db.add(PasswordResetToken(
                 user_id=user.id,
                 token_hash=hash_password(code),
                 expires_at=now + timedelta(minutes=15),
             ))
             db.flush()
-            if log_code:
-                logger.info("Development password reset code for %s: %s", email, code)
         db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return reset_code
+
+
+def reset_password_service(email: str, code: str, new_password: str, db: Session):
+    """Validate a one-time email code and replace the local account password."""
+    now = datetime.utcnow()
+    try:
+        user = (
+            db.query(User)
+            .filter(
+                func.lower(User.email) == email.strip().lower(),
+                User.auth_provider == AuthProvider.LOCAL,
+                User.password_hash.isnot(None),
+            )
+            .with_for_update()
+            .first()
+        )
+        if not user:
+            raise HTTPException(status_code=400, detail="Mã xác nhận không hợp lệ hoặc đã hết hạn")
+
+        reset_token = (
+            db.query(PasswordResetToken)
+            .filter(
+                PasswordResetToken.user_id == user.id,
+                PasswordResetToken.used_at.is_(None),
+                PasswordResetToken.invalidated_at.is_(None),
+            )
+            .order_by(PasswordResetToken.created_at.desc(), PasswordResetToken.id.desc())
+            .with_for_update()
+            .first()
+        )
+        if (
+            not reset_token
+            or reset_token.expires_at <= now
+            or not verify_password(code, reset_token.token_hash)
+        ):
+            raise HTTPException(status_code=400, detail="Mã xác nhận không hợp lệ hoặc đã hết hạn")
+
+        if verify_password(new_password, user.password_hash):
+            raise HTTPException(status_code=400, detail="Mật khẩu mới phải khác mật khẩu hiện tại")
+
+        user.password_hash = hash_password(new_password)
+        reset_token.used_at = now
+        (db.query(PasswordResetToken)
+         .filter(
+             PasswordResetToken.user_id == user.id,
+             PasswordResetToken.id != reset_token.id,
+             PasswordResetToken.used_at.is_(None),
+             PasswordResetToken.invalidated_at.is_(None),
+         )
+         .update({PasswordResetToken.invalidated_at: now}, synchronize_session=False))
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
     except Exception:
         db.rollback()
         raise

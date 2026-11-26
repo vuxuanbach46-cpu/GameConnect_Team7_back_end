@@ -52,6 +52,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 "/auth/login",
                 "/auth/register",
                 "/auth/forgot-password",
+                "/auth/reset-password",
                 "/auth/refresh",
                 "/auth/logout",
                 "/auth/google/login",

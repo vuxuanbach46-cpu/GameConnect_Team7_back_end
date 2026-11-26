@@ -62,6 +62,7 @@ def create_team_service(info: TeamCreateRequest, db: Session, current_user: User
 
     # 6. Chuẩn hóa logo và mô tả
     logo_url = info.logo_url.strip() if info.logo_url else None
+    cover_url = info.cover_url.strip() if info.cover_url else None
 
     description = (
         info.description.strip()
@@ -74,6 +75,7 @@ def create_team_service(info: TeamCreateRequest, db: Session, current_user: User
         team = Team(
             name=team_name,
             logo_url=logo_url,
+            cover_url=cover_url,
             main_game_id=info.main_game_id,
             description=description,
             captain_id=current_user.id,
@@ -211,6 +213,12 @@ def update_team_service(
                 logo_url = None
 
         update_data["logo_url"] = logo_url
+
+    if "cover_url" in update_data:
+        cover_url = update_data["cover_url"]
+        if cover_url is not None:
+            cover_url = cover_url.strip() or None
+        update_data["cover_url"] = cover_url
 
     # 10. Chuẩn hóa mô tả
     if "description" in update_data:
@@ -427,6 +435,7 @@ def get_team_detail_service(team_id: int, db: Session):
         "id": team.id,
         "name": team.name,
         "logo_url": team.logo_url,
+        "cover_url": team.cover_url,
         "main_game_id": team.main_game_id,
         "description": team.description,
         "captain_id": team.captain_id,

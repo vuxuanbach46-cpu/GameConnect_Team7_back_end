@@ -2,7 +2,7 @@ import logging
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 from authlib.integrations.base_client.errors import OAuthError
-from fastapi import APIRouter, Depends, Request, status, Header
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, status, Header
 from fastapi.responses import RedirectResponse
 from app.schemas.auth import (
     UserRegisterRequest,
@@ -27,9 +27,10 @@ from fastapi import HTTPException
 from app.core.config import settings
 from datetime import datetime, timezone
 from app.schemas.auth import LogoutRequest
-from app.schemas.auth import ChangePasswordRequest, ForgotPasswordRequest
+from app.schemas.auth import ChangePasswordRequest, ForgotPasswordRequest, ResetPasswordRequest
 from app.core.security import get_current_user
-from app.crud.auth import change_password_service, request_password_reset_service
+from app.crud.auth import change_password_service, request_password_reset_service, reset_password_service
+from app.services.email_service import send_password_reset_email, send_registration_email
 from app.core.google_oauth import oauth
 from app.core.security import oauth2_schema
 from app.core.security import (
@@ -78,16 +79,26 @@ def change_password(
 
 
 @router.post("/forgot-password", summary="Yêu cầu đặt lại mật khẩu")
-@limiter.limit("3/hour")
+@limiter.limit("5/hour")
 def forgot_password(
     request: Request,
     info: ForgotPasswordRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    try:
-        request_password_reset_service(
-            info.email, db, log_code=settings.ENVIRONMENT.strip().lower() == "development"
+    if not settings.SMTP_USER.strip() or not settings.SMTP_APP_PASSWORD.strip():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Không thể gửi mã vì backend chưa cấu hình SMTP Gmail. "
+                "Quản trị viên cần điền SMTP_USER và SMTP_APP_PASSWORD trong file .env, "
+                "sau đó khởi động lại backend."
+            ),
         )
+    try:
+        reset_code = request_password_reset_service(info.email, db)
+        if reset_code:
+            background_tasks.add_task(send_password_reset_email, info.email, reset_code)
         return api_repoint(
             req=request,
             status_code=status.HTTP_200_OK,
@@ -105,13 +116,42 @@ def forgot_password(
         )
 
 
+@router.post("/reset-password", summary="Đặt lại mật khẩu bằng mã email")
+@limiter.limit("5/hour")
+def reset_password(
+    request: Request,
+    info: ResetPasswordRequest,
+    db: Session = Depends(get_db),
+):
+    reset_password_service(
+        email=info.email,
+        code=info.code,
+        new_password=info.new_password,
+        db=db,
+    )
+    return api_repoint(
+        req=request,
+        status_code=status.HTTP_200_OK,
+        message="Đặt lại mật khẩu thành công",
+        data=None,
+    )
+
+
 @router.post(
     "/register",
     summary="Đăng ký tài khoản",
     description="Người dùng nhập thông tin để đăng kí tài khoản",
 )
-def create_register(req: Request, info: UserRegisterRequest, db=Depends(get_db)):
+def create_register(
+    req: Request,
+    info: UserRegisterRequest,
+    background_tasks: BackgroundTasks,
+    db=Depends(get_db),
+):
     user_new = create_register_service(info=info, db=db)
+    background_tasks.add_task(
+        send_registration_email, user_new.email, user_new.username
+    )
 
     user_role = user_new.role.value if hasattr(user_new.role, "value") else str(user_new.role)
     user_status = user_new.status.value if hasattr(user_new.status, "value") else str(user_new.status)

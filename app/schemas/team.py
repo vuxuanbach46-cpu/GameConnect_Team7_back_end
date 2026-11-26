@@ -18,6 +18,7 @@ class TeamCreateRequest(BaseModel):
     name: str = Field(min_length=2, max_length=100)
 
     logo_url: Optional[str] = Field(default=None, max_length=500)
+    cover_url: Optional[str] = Field(default=None, max_length=500)
 
     main_game_id: int
 
@@ -34,6 +35,7 @@ class TeamUpdateRequest(BaseModel):
     name: Optional[str] = Field(default=None, min_length=2, max_length=100)
 
     logo_url: Optional[str] = Field(default=None, max_length=500)
+    cover_url: Optional[str] = Field(default=None, max_length=500)
 
     main_game_id: Optional[int] = None
 
@@ -48,6 +50,7 @@ class TeamResponse(BaseModel):
     id: int
     name: str
     logo_url: Optional[str]
+    cover_url: Optional[str] = None
     main_game_id: int
     description: Optional[str]
     captain_id: int
@@ -70,6 +73,7 @@ class TeamDetailResponse(BaseModel):
     id: int
     name: str
     logo_url: Optional[str]
+    cover_url: Optional[str] = None
     main_game_id: int
     description: Optional[str]
     captain_id: int
