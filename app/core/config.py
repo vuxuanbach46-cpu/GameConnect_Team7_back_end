@@ -3,20 +3,47 @@
 Muốn thêm cấu hình mới: thêm 1 dòng vào class Settings + thêm vào .env.example.
 """
 from urllib.parse import quote_plus
+from pathlib import Path
+import secrets
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(
+        env_file=Path(__file__).resolve().parents[2] / ".env",
+        env_file_encoding="utf-8",
+    )
 
     APP_NAME: str = "KS25 Base API"
+    ENVIRONMENT: str = "development"
 
-    DB_HOST: str = "127.0.0.1"
+    DB_HOST: str = "localhost"
     DB_PORT: int = 3306
     DB_USER: str = "root"
-    DB_PASSWORD: str = ""
+    DB_PASSWORD: str = "123456@"
     DB_NAME: str = "app_db"
+
+    SECRET_KEY: str = "gameconnect_team7_secret_key_fixed_for_dev_session_2026"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_REDIRECT_URI: str = "http://127.0.0.1:8000/auth/google/callback"
+    SESSION_SECRET_KEY: str = "gameconnect_team7_session_secret_key_2026"
+    FRONTEND_HOME_URL: str = "http://127.0.0.1:5500/GameConnect_Team7_forent_end/pages/home.html"
+
+    # Gmail SMTP: use an App Password (not the regular Google account password).
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_APP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = ""
+    SMTP_FROM_NAME: str = "GameConnect"
+    SMTP_USE_SSL: bool = False
+    SMTP_STARTTLS: bool = True
 
     # Chuỗi các origin cách nhau bằng dấu phẩy, hoặc "*"
     CORS_ORIGINS: str = "*"

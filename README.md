@@ -64,7 +64,11 @@ copy .env.example .env
 cp .env.example .env
 ```
 
-Mở file `.env`, điền **mật khẩu root MySQL** của bạn:
+Mở file `.env`, điền **mật khẩu root MySQL** của bạn. Tạo `SESSION_SECRET_KEY`
+ngẫu nhiên bằng lệnh `python -c "import secrets; print(secrets.token_urlsafe(32))"`
+rồi thay giá trị mẫu trong `.env`. Nếu không dùng đăng nhập Google, giữ nguyên
+giá trị Google OAuth mẫu; nếu dùng, hãy điền OAuth credentials từ Google Cloud
+Console.
 
 ```
 DB_HOST=127.0.0.1
@@ -72,7 +76,26 @@ DB_PORT=3306
 DB_USER=root
 DB_PASSWORD=mat_khau_root_cua_ban
 DB_NAME=app_db
+GOOGLE_CLIENT_ID=replace-with-google-client-id
+GOOGLE_CLIENT_SECRET=replace-with-google-client-secret
+GOOGLE_REDIRECT_URI=http://127.0.0.1:8000/auth/google/callback
+SESSION_SECRET_KEY=gia_tri_ngau_nhien_tu_lenh_python
 ```
+
+Để gửi email khi đăng ký và quên mật khẩu, điền cấu hình SMTP Gmail trong `.env`:
+
+```dotenv
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your-account@gmail.com
+SMTP_APP_PASSWORD=xxxx xxxx xxxx xxxx
+SMTP_FROM_EMAIL=your-account@gmail.com
+SMTP_FROM_NAME=GameConnect
+SMTP_USE_SSL=false
+SMTP_STARTTLS=true
+```
+
+Trong Google Account, bật xác minh 2 bước rồi tạo **App Password**; không dùng mật khẩu Google thông thường. Email chào mừng và mã đặt lại mật khẩu được gửi bằng `BackgroundTasks` sau phản hồi API. Mã đặt lại có hiệu lực 15 phút. Nếu SMTP chưa cấu hình hoặc gửi lỗi, API vẫn hoàn tất yêu cầu và lỗi gửi mail được ghi vào log backend.
 
 ## 5. Bước 3: cài thư viện Python
 
@@ -126,6 +149,49 @@ Kiểm tra:
 
 Khi lỗi, API trả về JSON dạng `{"detail": "..."}`. Ví dụ: 404 khi không tìm thấy, 422 khi dữ liệu gửi lên sai.
 
+### API xác thực
+
+| Method | URL | Nội dung | Body (JSON) |
+|---|---|---|---|
+| POST | `/auth/register` | Đăng ký tài khoản | `{"email":"player@example.com","password":"secret123","full_name":"Player One"}` |
+| POST | `/auth/login` | Đăng nhập | `{"email":"player@example.com","password":"secret123"}` |
+
+`full_name` được lưu làm username. Nếu username đã tồn tại, API trả lỗi 422 với thông báo `Username đã tồn tại`.
+
+### API bài viết
+
+Các endpoint bài viết dùng đường dẫn `/posts`. Bảng tin và các thao tác tạo, sửa, xóa yêu cầu access token Bearer; chỉ tác giả đăng nhập mới được sửa hoặc xóa.
+
+| Method | URL | Nội dung |
+|---|---|---|
+| POST | `/posts` | Tạo bài viết |
+| GET | `/posts?skip=0&limit=20` | Bảng tin mới nhất (cần access token Bearer) |
+| GET | `/posts/featured?skip=0&limit=20` | Bài có nhiều lượt thích/bình luận nhất trong 7 ngày gần nhất |
+| GET | `/posts/search?keyword=valorant` | Tìm nội dung bài theo từ khóa |
+| GET | `/posts/search?hashtag=valorant` | Tìm nội dung bài theo hashtag `#valorant` |
+| GET | `/posts/{post_id}` | Chi tiết bài viết |
+| PUT | `/posts/{post_id}` | Cập nhật bài viết |
+| DELETE | `/posts/{post_id}` | Xóa bài viết |
+
+Nội dung dài 1–2000 ký tự. Ảnh truyền bằng `image_urls` (tối đa 4 URL, mỗi URL tối đa 500 ký tự); `image_url` đơn vẫn được hỗ trợ để tương thích. Response có `like_count`, `comment_count`, `game_ids`, trạng thái và thời gian tạo/sửa. Với database đã có bảng `posts`, chạy `sql/posts_add_image_urls.sql` một lần để thêm cột ảnh mới.
+
+Bảng tin phân trang bằng `skip`/`limit` (giới hạn `limit` tối đa 100) và hỗ trợ lọc tùy chọn `game_id`, `user_id`, `friends_only=true`. Chỉ bài `VISIBLE` được trả về; bài của người dùng có quan hệ chặn với tài khoản hiện tại cũng bị ẩn.
+
+API bài nổi bật xếp theo số lượt thích và bình luận **phát sinh trong 7 ngày gần nhất** (bao gồm cả bài đăng cũ); bài không có tương tác trong khoảng thời gian này không xuất hiện. Tìm kiếm không phân biệt chữ hoa/thường, chỉ trả bài `VISIBLE`, hỗ trợ truyền đồng thời `keyword` và `hashtag` để lọc kết hợp. Các API này cho phép truy cập không cần đăng nhập; nếu đã đăng nhập thì bài từ tài khoản có quan hệ chặn sẽ bị ẩn.
+
+### Bình luận và lượt thích
+
+| Method | URL | Nội dung |
+|---|---|---|
+| GET | `/posts/{post_id}/comments?skip=0&limit=20` | Danh sách bình luận, gồm cả trả lời (phân trang) |
+| POST | `/posts/{post_id}/comments` | Thêm bình luận hoặc trả lời |
+| PUT | `/posts/{post_id}/comments/{comment_id}` | Sửa bình luận của mình |
+| DELETE | `/posts/{post_id}/comments/{comment_id}` | Xóa bình luận của mình |
+| POST | `/posts/{post_id}/like` | Thích bài viết (gọi lặp không tạo lượt thích trùng) |
+| DELETE | `/posts/{post_id}/like` | Bỏ thích bài viết |
+
+Các thao tác ghi yêu cầu access token Bearer. Nội dung bình luận dài 1–2000 ký tự; trả lời chỉ được tạo ở cấp đầu tiên. Tác giả bài viết nhận thông báo khi người khác bình luận, trả lời hoặc thích bài viết; tương tác của chính tác giả không tạo thông báo.
+
 ## 8. Frontend nối với backend thế nào?
 
 - Frontend gọi tới `http://127.0.0.1:8000/api/...` (cấu hình ở `frontend/js/config.js`).
@@ -163,3 +229,14 @@ Khi lỗi, API trả về JSON dạng `{"detail": "..."}`. Ví dụ: 404 khi kh�
 ## 11. (Không bắt buộc) Chạy MySQL bằng Docker
 
 Chỉ dành cho bạn nào đã biết Docker và không muốn cài MySQL. Trong `backend/` chạy `docker compose up -d`: MySQL chạy ở cổng **3307**, tự tạo bảng từ `sql/init.sql`. Khi đó sửa `.env` thành `DB_PORT=3307`, `DB_USER=app_user`, `DB_PASSWORD=app_password`.
+
+### Lời mời vào đội (T3CD7E2)
+
+Chạy `sql/team_invitations.sql` trên cơ sở dữ liệu hiện có (hoặc bổ sung bảng bằng `sql/run_all.sql` khi khởi tạo mới). Đội trưởng có thể mời game thủ từ hồ sơ trong trang Bạn bè; người nhận mở **Lời mời vào đội** để chấp nhận hoặc từ chối. Backend kiểm tra quyền đội trưởng, quan hệ chặn, số chỗ còn lại và quyền phản hồi; lời mời và thông báo được lưu trong cơ sở dữ liệu.
+
+API yêu cầu Bearer access token: `GET /api/team-invitations/captain-teams`, `POST /api/team-invitations` với `team_id` và `user_id`, `GET /api/team-invitations/me`, và `PATCH /api/team-invitations/{id}` với `action` là `accept` hoặc `reject`. Chạy kiểm thử bằng `python -m unittest discover -s tests -p test_team_invitations.py -v`.
+
+
+### Bảng tin nội bộ đội
+
+Với cơ sở dữ liệu đã tồn tại, chạy `sql/team_feed_posts.sql` để tạo bảng bảng tin. Đội trưởng có thể đăng thông báo và lịch chơi; chỉ thành viên của đội được xem. API dùng access token qua các đường dẫn `GET /api/teams/{team_id}/join-requests`, `GET /api/teams/{team_id}/feed` và `POST /api/teams/{team_id}/feed`. Danh mục game có thể khởi tạo bằng `sql/seed_games_data.sql` nếu cơ sở dữ liệu chưa có game.
